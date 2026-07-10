@@ -1,0 +1,14 @@
+{
+  "thatonemusicfinderapp": {
+    "metadata": {
+      "slug": "thatonemusicfinderapp",
+      "title": "A music finder app.",
+      "description": "Find Music",
+      "favicon": "",
+      "image": ""
+    },
+    "html": "<!DOCTYPE html>\n<html><head><meta name=\"description\" content=\"Find Music\" /><title>A music finder app.</title><style>\n  body { display:flex; align-items:center; justify-content:center; height:100vh; margin:0; background:#0a0a0a; color:#666; font-family:system-ui; }\n</style></head><body><p>No HTML file in project</p></body></html>",
+    "files": [],
+    "publishedAt": "2026-02-19T19:48:01.056Z"
+  }
+}

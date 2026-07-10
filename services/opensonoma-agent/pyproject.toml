@@ -1,0 +1,56 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "opensonoma"
+version = "1.0.0"
+description = "Give Tripplet Sonoma full, owner-authorized access to your machine over a secure, NAT-friendly relay."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [
+    { name = "Tripplet" },
+]
+keywords = [
+    "opensonoma",
+    "tripplet",
+    "sonoma",
+    "remote",
+    "automation",
+    "daemon",
+    "relay",
+    "websocket",
+]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Intended Audience :: System Administrators",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: MacOS :: MacOS X",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: System :: Systems Administration",
+    "Topic :: Terminals",
+]
+dependencies = [
+    "textual>=0.50",
+    "websockets>=12",
+]
+
+[project.scripts]
+opensonoma = "opensonoma.cli:main"
+
+[project.urls]
+Homepage = "https://tripplet.ai"
+Repository = "https://github.com/tripplet/opensonoma"
+
+[tool.setuptools]
+packages = ["opensonoma"]
+include-package-data = true

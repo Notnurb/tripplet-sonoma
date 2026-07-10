@@ -1,0 +1,112 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { jwtVerify } from 'jose'
+
+const CSP = [
+    "default-src 'self'",
+    "script-src 'self' 'unsafe-eval' 'unsafe-inline' https://*.groq.com https://*.spline.io https://*.e2b.dev",
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data: blob: https:",
+    "font-src 'self' data:",
+    "connect-src 'self' https://api.groq.com https://opencode.ai https://*.e2b.dev https://*.spline.io wss://*.e2b.dev",
+    "frame-src 'self' https://*.spline.io https://*.e2b.dev",
+    "media-src 'self'",
+    "object-src 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+].join('; ')
+
+export async function middleware(request: NextRequest) {
+    const { pathname } = request.nextUrl
+
+    if (pathname.startsWith('/api')) {
+        const response = NextResponse.next()
+        response.headers.set('X-Content-Type-Options', 'nosniff')
+        response.headers.set('X-Frame-Options', 'DENY')
+        response.headers.set('X-XSS-Protection', '0')
+        response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin')
+        response.headers.set('Content-Security-Policy', CSP)
+        return response
+    }
+
+    const publicPaths = [
+        '/',
+        '/about',
+        '/blog',
+        '/changelog',
+        // MCP OAuth: discovery metadata and the consent screen must be reachable
+        // pre-auth. The consent page handles the "not signed in" case itself
+        // (and preserves the OAuth params); the /api/mcp + /api/oauth routes do
+        // their own bearer/PKCE auth. See src/lib/mcp/*.
+        '/.well-known',
+        '/oauth',
+        '/mcp',
+        // OpenSonoma installer — must be reachable by an unauthenticated
+        // `curl ... | bash`. Covers /installconnect and /installconnect.sh.
+        '/installconnect',
+        // Tripplet Sandboxed Linux (v86) runtime + guest image assets.
+        '/v86',
+        // Sonoma workspace — usable without an account (guest mode).
+        // These all render the guest-capable ChatShell backed by /api/sonoma.
+        '/chat',
+        '/code',
+        '/dev',
+        '/hyperagent',
+        '/features',
+        '/forgot-password',
+        '/login',
+        '/privacy',
+        '/register',
+        '/reset-password',
+        '/sign-in',
+        '/site-map',
+        '/terms',
+    ]
+
+    const isPublicPath = publicPaths.some((path) => pathname === path || pathname.startsWith(`${path}/`))
+    const isAuthed = await hasValidAuthCookie(request)
+
+    if (isAuthed && (pathname.startsWith('/login') || pathname.startsWith('/register') || pathname === '/sign-in')) {
+        const url = request.nextUrl.clone()
+        url.pathname = '/chat'
+        return NextResponse.redirect(url)
+    }
+
+    if (!isAuthed && !isPublicPath) {
+        const url = request.nextUrl.clone()
+        url.pathname = '/login'
+        return NextResponse.redirect(url)
+    }
+
+    const response = NextResponse.next()
+    response.headers.set('X-Content-Type-Options', 'nosniff')
+    response.headers.set('X-Frame-Options', 'DENY')
+    response.headers.set('X-XSS-Protection', '0')
+    response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin')
+    response.headers.set('Content-Security-Policy', CSP)
+    response.headers.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains')
+    return response
+}
+
+async function hasValidAuthCookie(request: NextRequest): Promise<boolean> {
+    // auth_token JWT cookie — verified fully (Edge-safe via jose).
+    const token = request.cookies.get('auth_token')?.value
+    const secret = process.env.JWT_SECRET
+    if (token && secret) {
+        try {
+            await jwtVerify(token, new TextEncoder().encode(secret), {
+                algorithms: ['HS256'],
+            })
+            return true
+        } catch {
+            // invalid/expired — treat as signed out
+        }
+    }
+    return false
+}
+
+export const config = {
+    matcher: [
+        '/((?!_next|[^?]*\\.(?:html?|css|sh|gz|tgz|js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|docx?|xlsx?|zip|webmanifest|mp4|m4v|webm|mov)).*)',
+        '/(api|trpc)(.*)',
+    ],
+}

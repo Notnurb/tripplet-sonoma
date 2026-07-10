@@ -1,0 +1,63 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies
+/node_modules
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# testing
+/coverage
+
+# Cloned vendor repos (mem0, supermemory)
+services/backend/vendor/
+services/backend/__pycache__/
+services/backend/**/__pycache__/
+services/backend/*.db
+
+# next.js
+/.next/
+/out/
+
+# production
+/build
+
+# misc
+.DS_Store
+*.pem
+
+# local dev auth store (contains password hashes)
+data/dev-auth-users.json
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# local server logs & scratch notes
+*.log
+review.txt
+
+# env files (can opt-in for committing if needed)
+.env*
+!.env.example
+!.env.template
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+.env*.local
+
+# clerk configuration (can include secrets)
+/.clerk/
+.gstack/
+test-results/
+bin/

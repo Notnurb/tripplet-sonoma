@@ -1,0 +1,237 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model User {
+  id             String         @id @default(cuid())
+  email          String         @unique
+  passwordHash   String?
+  name           String?
+  bio            String?
+  image          String?
+  // Better Auth requires emailVerified to be a Boolean (not the NextAuth-style
+  // DateTime). It is written by Better Auth's email-verification flow.
+  emailVerified  Boolean        @default(false)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  aiUsage       AIUsage[]
+  conversations      Conversation[]
+  fileUploads        FileUpload[]
+  passwordResetTokens PasswordResetToken[]
+  // Better Auth relations
+  authSessions  AuthSession[]
+  accounts      Account[]
+
+  @@index([email])
+}
+
+model Conversation {
+  id        String    @id @default(cuid())
+  userId    String
+  title     String
+  model     String
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages  Message[]
+
+  @@index([userId, updatedAt])
+  @@index([userId, deletedAt])
+}
+
+model Message {
+  id             String       @id @default(cuid())
+  conversationId String
+  role           String
+  content        String
+  attachments    Json?
+  tone           String?
+  extendedThink  Boolean      @default(false)
+  createdAt      DateTime     @default(now())
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId, createdAt])
+}
+
+model FileUpload {
+  id         String    @id @default(cuid())
+  userId     String
+  filename   String
+  fileType   String
+  fileSize   Int
+  s3Key      String    @unique
+  s3Url      String?
+  uploadedAt DateTime  @default(now())
+  deletedAt  DateTime?
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, uploadedAt])
+  @@index([s3Key])
+}
+
+model AIUsage {
+  id             String   @id @default(cuid())
+  userId         String
+  conversationId String?
+  model          String
+  tokensUsed     Int
+  estimatedCost  Float
+  extendedThink  Boolean  @default(false)
+  timestamp      DateTime @default(now())
+  user           User     @relation(fields: [userId], references: [id])
+
+  @@index([userId, timestamp])
+  @@index([conversationId])
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([token])
+  @@index([userId, expiresAt])
+}
+
+// Better Auth session table. Kept separate from the legacy `Session` model
+// (custom JWT auth) to avoid collisions. Mapped via `session.modelName:
+// 'authSession'` in src/lib/auth/better-auth.ts. Field names/types mirror
+// Better Auth's canonical schema exactly — do not rename without also setting
+// the matching `session.fields.*` override.
+model AuthSession {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([token])
+  @@index([userId])
+}
+
+// Better Auth account table — stores the hashed password (email/password
+// provider) and any OAuth tokens. Field names mirror Better Auth's canonical
+// schema exactly.
+model Account {
+  id                    String    @id @default(cuid())
+  userId                String
+  accountId             String
+  providerId            String
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([providerId, accountId])
+  @@index([userId])
+}
+
+// Better Auth verification table (email verification, password reset, etc.).
+// `createdAt`/`updatedAt` are required by Better Auth.
+model Verification {
+  id         String   @id @default(cuid())
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([identifier])
+}
+
+model PasswordResetToken {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([token])
+  @@index([userId])
+}
+
+model UserMemory {
+  id        String   @id @default(cuid())
+  userId    String
+  content   String
+  tags      String[]
+  source    String   @default("explicit") // "explicit" | "auto"
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([userId, createdAt])
+}
+
+model TelegramBot {
+  id            String            @id @default(cuid())
+  userId        String
+  token         String            @unique
+  username      String?
+  model         String            @default("majuli-3")
+  active        Boolean           @default(true)
+  webhookSecret String?
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+  messages      TelegramMessage[]
+
+  @@index([userId])
+}
+
+// Per-(bot, telegramChatId) conversation history. Each row is one turn.
+// Cascades when the bot is disconnected so we never leak stale chat logs
+// from previous bot bindings. `telegramChatId` is stored as a string because
+// Telegram chat ids can exceed 2^53 (channels/groups).
+model TelegramMessage {
+  id             String      @id @default(cuid())
+  botId          String
+  telegramChatId String
+  role           String      // "user" | "assistant"
+  content        String
+  createdAt      DateTime    @default(now())
+  bot            TelegramBot @relation(fields: [botId], references: [id], onDelete: Cascade)
+
+  @@index([botId, telegramChatId, createdAt])
+}
+
+// Per-message thumbs-up / thumbs-down. Aggregated by getFeedbackSignals() to
+// derive lightweight preferences that get injected into the system prompt
+// (e.g. "user prefers shorter answers"). One rating per (user, messageId);
+// re-rating overwrites. messageId is a client-generated uuid — not a FK to
+// Message since not every chat-bubble id makes it into the persisted Message
+// table (regenerations, in-flight messages, etc).
+model MessageFeedback {
+  id             String   @id @default(cuid())
+  userId         String
+  messageId      String
+  conversationId String?
+  model          String?
+  rating         Int      // 1 = thumbs up, -1 = thumbs down
+  contentLength  Int      @default(0)
+  contentSnippet String   @default("")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([userId, messageId])
+  @@index([userId, createdAt])
+}

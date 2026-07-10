@@ -1,0 +1,24 @@
+{
+  "users": [
+    {
+      "id": "dev_6d925af7-41ea-4eae-b3ac-0fde2ea137db",
+      "email": "alex@notnurb.com",
+      "passwordHash": "$2b$12$liE0.eHWKXfGN7wIo5.FFe.kNn8DMpfwTHcYeoTmap1BFN6Wvv7eS",
+      "name": "alex",
+      "bio": null,
+      "image": null,
+      "createdAt": "2026-05-16T07:23:55.703Z",
+      "updatedAt": "2026-05-16T07:23:55.703Z"
+    },
+    {
+      "id": "dev_413a582c-8bf5-4af1-9a68-0ad550bf459b",
+      "email": "notnurb@atomicmail.io",
+      "passwordHash": "$2b$12$00meQ0pG2E3uxZOtA7cPAOP3IIIpuow0fJoS6FoVDsPWxysnCSGNG",
+      "name": "Alex",
+      "bio": null,
+      "image": null,
+      "createdAt": "2026-05-16T12:37:21.196Z",
+      "updatedAt": "2026-05-16T12:37:21.196Z"
+    }
+  ]
+}

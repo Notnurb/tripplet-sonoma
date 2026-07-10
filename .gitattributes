@@ -1,0 +1,4 @@
+# setup.sh is a POSIX sh script — its shebang breaks under CRLF, so pin it to
+# LF on every platform. Its executable bit is committed
+# (git update-index --chmod=+x), so `./setup.sh` works with no chmod after clone.
+setup.sh text eol=lf

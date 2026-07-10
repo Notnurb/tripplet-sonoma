@@ -1,0 +1,12 @@
+# Python build / install artifacts
+build/
+dist/
+*.egg-info/
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Relay deps
+relay/node_modules/
+relay/.env

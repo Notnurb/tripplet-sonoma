@@ -1,0 +1,113 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+        env:
+          # Prisma generate (postinstall) needs no live DB, but guard anyway.
+          PRISMA_HIDE_UPDATE_MESSAGE: '1'
+      - name: Type check
+        run: npm run type-check
+      - name: Lint
+        run: npm run lint
+      - name: Docs freshness (referenced repo paths resolve)
+        run: npm run check:docs
+      - name: Unit tests + coverage gate
+        run: npm run test:coverage
+        env:
+          JWT_SECRET: ci-only-secret-not-used-in-any-deployment
+      - name: Prebuild env gate (self-check passes with the documented required set)
+        run: node scripts/check-env.mjs
+        env:
+          NODE_ENV: production
+          SKIP_ENV_FILE: '1'
+          DATABASE_URL: postgresql://u:p@localhost:5432/db
+          DIRECT_URL: postgresql://u:p@localhost:5432/db
+          JWT_SECRET: ci-only-secret-not-used-in-any-deployment
+          NEXT_PUBLIC_APP_URL: http://localhost:3000
+          GROQ_API_KEY: gsk_ci_dummy
+      - name: Production build (catches build-only breakage type-check can't see)
+        run: npx next build
+        env:
+          # Dummy but schema-valid values: the build compiles without touching a
+          # real DB (all DB-reading routes are dynamic). This step exists because
+          # `tsc` passing does NOT guarantee `next build` succeeds — e.g. an
+          # unresolvable CSS @import fails webpack but not type-check.
+          SKIP_ENV_FILE: '1'
+          DATABASE_URL: postgresql://u:p@localhost:5432/db
+          DIRECT_URL: postgresql://u:p@localhost:5432/db
+          JWT_SECRET: ci-only-secret-not-used-in-any-deployment
+          NEXT_PUBLIC_APP_URL: http://localhost:3000
+          GROQ_API_KEY: gsk_ci_dummy
+          OPENCODE_ZEN_API_KEY: zen_ci_dummy
+      - name: Dependency audit (production tree, high severity)
+        run: npm audit --omit=dev --audit-level=high
+      - name: Dependency audit (full tree, informational)
+        # Non-blocking: surfaces dev-tooling CVEs (e.g. esbuild dev-server) that
+        # the prod gate above intentionally excludes, so they stay visible in CI
+        # output without failing the build. Fixing them currently requires a
+        # breaking Next downgrade, so they're accepted; see review.md (Security).
+        run: npm audit || true
+
+  e2e:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: e2e
+          POSTGRES_PASSWORD: e2e
+          POSTGRES_DB: tripplet_e2e
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U e2e"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      # Throwaway service-container DB — real Prisma migrations run against it,
+      # and AUTH_E2E=1 lets the auth round-trip spec write a real user row here
+      # (the spec self-skips without it; see tests/auth-roundtrip.spec.ts).
+      DATABASE_URL: postgresql://e2e:e2e@localhost:5432/tripplet_e2e
+      DIRECT_URL: postgresql://e2e:e2e@localhost:5432/tripplet_e2e
+      JWT_SECRET: ci-only-secret-not-used-in-any-deployment
+      NEXT_PUBLIC_APP_URL: http://localhost:3000
+      GROQ_API_KEY: gsk_ci_dummy
+      OPENCODE_ZEN_API_KEY: zen_ci_dummy
+      SKIP_ENV_FILE: '1'
+      AUTH_E2E: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+        env:
+          PRISMA_HIDE_UPDATE_MESSAGE: '1'
+      - name: Build against the service DB (runs prisma migrate deploy)
+        run: npm run build
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+      - name: E2E (Playwright — guest access + real auth round trip)
+        run: npx playwright test
+      - name: Upload Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7
