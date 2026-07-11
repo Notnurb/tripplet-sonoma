@@ -1,12 +1,12 @@
 import type { Metadata, Viewport } from "next";
 import { Outfit, Geist, Newsreader, JetBrains_Mono } from "next/font/google";
-import Script from "next/script";
 import "./globals.css";
 import { cn } from "@/lib/utils";
 import { APP_NAME, APP_TAGLINE, APP_DESCRIPTION } from "@/lib/branding";
 import { Providers } from "./providers";
 import { Analytics } from "@vercel/analytics/next";
 import { SpeedInsights } from "@vercel/speed-insights/next";
+import { ClarityAnalytics } from "@/components/ClarityAnalytics";
 
 const outfit = Outfit({
     subsets: ['latin'],
@@ -77,16 +77,8 @@ export default function RootLayout({
             suppressHydrationWarning
             className={cn(outfit.variable, geist.variable, newsreader.variable, jetbrains.variable)}
         >
-            <head>
-                <Script id="clarity-analytics" strategy="afterInteractive">
-                    {`(function(c,l,a,r,i,t,y){
-        c[a]=c[a]||function(){(c[a].q=c[a].q||[]).push(arguments)};
-        t=l.createElement(r);t.async=1;t.src="https://www.clarity.ms/tag/"+i;
-        y=l.getElementsByTagName(r)[0];y.parentNode.insertBefore(t,y);
-    })(window, document, "clarity", "script", "xki5h68q91");`}
-                </Script>
-            </head>
             <body className={cn("min-h-screen bg-background font-sans antialiased")}>
+                <ClarityAnalytics />
                 <Providers>{children}</Providers>
                 <Analytics />
                 <SpeedInsights />
