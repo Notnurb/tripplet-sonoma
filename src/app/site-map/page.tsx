@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { LandingHeader } from '@/components/ui/landing-header';
 import { LandingFooter } from '@/components/ui/landing-footer';
+import { SITEMAP_SECTIONS } from '@/lib/sitemap-data';
 
 type SitemapEntry = {
     url: string;
@@ -15,69 +16,14 @@ type Section = {
     entries: SitemapEntry[];
 };
 
-const sections: Section[] = [
-    {
-        title: 'Marketing',
-        entries: [
-            { url: '/',             changeFrequency: 'daily',   priority: 1.0 },
-            { url: '/about',        changeFrequency: 'monthly', priority: 0.8 },
-            { url: '/features',     changeFrequency: 'monthly', priority: 0.9 },
-            { url: '/changelog',    changeFrequency: 'weekly',  priority: 0.7 },
-            { url: '/privacy',      changeFrequency: 'yearly',  priority: 0.3 },
-            { url: '/terms',        changeFrequency: 'yearly',  priority: 0.3 },
-            { url: '/insiders',     changeFrequency: 'monthly', priority: 0.6 },
-            { url: '/skins',        changeFrequency: 'monthly', priority: 0.5 },
-        ],
-    },
-    {
-        title: 'Auth',
-        entries: [
-            { url: '/login',           changeFrequency: 'yearly', priority: 0.5 },
-            { url: '/register',        changeFrequency: 'yearly', priority: 0.5 },
-            { url: '/sign-in',         changeFrequency: 'yearly', priority: 0.4 },
-            { url: '/forgot-password', changeFrequency: 'yearly', priority: 0.2 },
-        ],
-    },
-    {
-        title: 'Product',
-        entries: [
-            { url: '/chat',             changeFrequency: 'daily',   priority: 0.9 },
-            { url: '/code',             changeFrequency: 'daily',   priority: 0.8 },
-            { url: '/generate',         changeFrequency: 'daily',   priority: 0.7 },
-            { url: '/agents',           changeFrequency: 'weekly',  priority: 0.7 },
-            { url: '/hivemind',         changeFrequency: 'weekly',  priority: 0.7 },
-            { url: '/studio',           changeFrequency: 'weekly',  priority: 0.6 },
-            { url: '/coder',            changeFrequency: 'daily',   priority: 0.7 },
-            { url: '/spark',            changeFrequency: 'weekly',  priority: 0.6 },
-            { url: '/looptrain',        changeFrequency: 'weekly',  priority: 0.6 },
-            { url: '/subscribe',        changeFrequency: 'monthly', priority: 0.7 },
-            { url: '/profile',          changeFrequency: 'monthly', priority: 0.3 },
-            { url: '/api-dashboard',    changeFrequency: 'weekly',  priority: 0.5 },
-            { url: '/environment',      changeFrequency: 'monthly', priority: 0.5 },
-            { url: '/environment/report', changeFrequency: 'monthly', priority: 0.4 },
-        ],
-    },
-    {
-        title: 'Knowledge',
-        entries: [
-            { url: '/triplepedia', changeFrequency: 'daily', priority: 0.8 },
-        ],
-    },
-    {
-        title: 'Blog',
-        entries: [
-            { url: '/blog',                              changeFrequency: 'weekly',  priority: 0.8 },
-            { url: '/blog/march-2026-stability',         changeFrequency: 'monthly', priority: 0.6 },
-            { url: '/blog/introducing-v3-1-models',      changeFrequency: 'monthly', priority: 0.6 },
-            { url: '/blog/building-the-code-workspace',  changeFrequency: 'monthly', priority: 0.6 },
-            { url: '/blog/extended-thinking-explained',  changeFrequency: 'monthly', priority: 0.6 },
-            { url: '/blog/image-generation-pipeline',    changeFrequency: 'monthly', priority: 0.6 },
-            { url: '/blog/why-we-open-sourced',          changeFrequency: 'monthly', priority: 0.6 },
-            { url: '/blog/model-routing-architecture',   changeFrequency: 'monthly', priority: 0.6 },
-            { url: '/blog/web-search-integration',       changeFrequency: 'monthly', priority: 0.6 },
-        ],
-    },
-];
+const sections: Section[] = SITEMAP_SECTIONS.map((section) => ({
+    title: section.title,
+    entries: section.entries.map((entry) => ({
+        url: entry.path,
+        changeFrequency: entry.changeFrequency,
+        priority: entry.priority,
+    })),
+}));
 
 const totalUrls = sections.reduce((sum, s) => sum + s.entries.length, 0);
 
@@ -108,12 +54,19 @@ export default function SiteMapPage() {
                     </h1>
                     <p className="mt-2 text-sm text-muted-foreground">
                         {totalUrls} indexed pages across {sections.length} sections.
-                        Machine-readable XML available at{' '}
+                        Machine-readable sitemaps available at{' '}
                         <Link
                             href="/sitemap.xml"
                             className="font-mono text-foreground/70 underline underline-offset-4 decoration-foreground/20 hover:text-foreground transition-colors"
                         >
                             /sitemap.xml
+                        </Link>{' '}
+                        and{' '}
+                        <Link
+                            href="/sitemap.txt"
+                            className="font-mono text-foreground/70 underline underline-offset-4 decoration-foreground/20 hover:text-foreground transition-colors"
+                        >
+                            /sitemap.txt
                         </Link>
                     </p>
                 </div>

@@ -3,11 +3,11 @@ import { jwtVerify } from 'jose'
 
 const CSP = [
     "default-src 'self'",
-    "script-src 'self' 'unsafe-eval' 'unsafe-inline' https://*.groq.com https://*.spline.io https://*.e2b.dev",
+    "script-src 'self' 'unsafe-eval' 'unsafe-inline' https://*.groq.com https://*.spline.io https://*.e2b.dev https://www.clarity.ms https://*.clarity.ms https://va.vercel-scripts.com",
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: blob: https:",
     "font-src 'self' data:",
-    "connect-src 'self' https://api.groq.com https://opencode.ai https://*.e2b.dev https://*.spline.io wss://*.e2b.dev",
+    "connect-src 'self' https://api.groq.com https://opencode.ai https://*.e2b.dev https://*.spline.io wss://*.e2b.dev https://www.clarity.ms https://*.clarity.ms https://vitals.vercel-insights.com",
     "frame-src 'self' https://*.spline.io https://*.e2b.dev",
     "media-src 'self'",
     "object-src 'none'",
@@ -60,6 +60,11 @@ export async function middleware(request: NextRequest) {
         '/sign-in',
         '/site-map',
         '/terms',
+        // Crawlers hit these unauthenticated — must never redirect to /login.
+        '/sitemap.xml',
+        '/sitemap',
+        '/sitemap.txt',
+        '/robots.txt',
     ]
 
     const isPublicPath = publicPaths.some((path) => pathname === path || pathname.startsWith(`${path}/`))
