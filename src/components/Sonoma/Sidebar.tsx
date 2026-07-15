@@ -7,7 +7,7 @@ import { useChatActions, useChatConversations } from '@/context/ChatContext';
 import { type User, useAuth } from '@/context/AuthContext';
 import { cn } from '@/lib/utils';
 import { HugeiconsIcon } from '@hugeicons/react';
-import { Book01Icon, Logout02Icon, PaintBoardIcon, Settings05Icon, Store01Icon } from '@hugeicons/core-free-icons';
+import { Book01Icon, Logout02Icon, PaintBoardIcon, Settings05Icon } from '@hugeicons/core-free-icons';
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -28,18 +28,11 @@ function TriplepediaIcon({ size = 18 }: { size?: number }) {
     return <HugeiconsIcon icon={Book01Icon} size={size} strokeWidth={1.8} />;
 }
 
-function StoreIcon({ size = 18 }: { size?: number }) {
-    return <HugeiconsIcon icon={Store01Icon} size={size} strokeWidth={1.8} />;
-}
-
 const PAGES = [
     { id: 'chat', label: 'Chat', icon: SonomaChat, href: '/chat' },
     { id: 'code', label: 'Code', icon: SonomaCode, href: '/code' },
     { id: 'agent', label: 'Agent', icon: SonomaAgent, href: '/hyperagent' },
     { id: 'triplepedia', label: 'Triplepedia', icon: TriplepediaIcon, href: '/triplepedia' },
-    // Accountless x402 storefront — deliberately in the main nav (guests and
-    // agents' humans see it too), not the signed-in account menu.
-    { id: 'store', label: 'Store', icon: StoreIcon, href: '/store' },
 ];
 
 const FACE_FILES = [
