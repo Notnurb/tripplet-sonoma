@@ -43,6 +43,10 @@
   "exclude": [
     "node_modules",
     "backend",
-    "temp_sparkupdate"
+    "temp_sparkupdate",
+    "vidapi",
+    "opensonoma-agent",
+    "pyreport",
+    "services"
   ]
 }
