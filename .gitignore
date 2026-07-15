@@ -1,7 +1,7 @@
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
 # dependencies
-/node_modules
+node_modules/
 /.pnp
 .pnp.*
 .yarn/*
@@ -61,3 +61,6 @@ next-env.d.ts
 .gstack/
 test-results/
 bin/
+
+# nested deps
+opensonoma-agent/relay/node_modules/

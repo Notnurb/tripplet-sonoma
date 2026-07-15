@@ -123,6 +123,12 @@ export const loginLimiter = rateLimit({ interval: 15 * 60 * 1000, uniqueTokenPer
 export const registerLimiter = rateLimit({ interval: 60 * 60 * 1000, uniqueTokenPerInterval: 10000 });
 export const forgotPasswordLimiter = rateLimit({ interval: 60 * 60 * 1000, uniqueTokenPerInterval: 10000 });
 
+// x402 store limiters. Buy covers 402 challenges AND paid attempts (agents
+// retry legitimately, so it's roomy); chat covers the paid inference endpoint
+// where every allowed request is either settling money or burning credits.
+export const x402BuyLimiter = rateLimit({ interval: 60 * 60 * 1000, uniqueTokenPerInterval: 10000 });
+export const x402ChatLimiter = rateLimit({ interval: 60 * 60 * 1000, uniqueTokenPerInterval: 10000 });
+
 // Limits per hour per token (user ID or IP).
 // Set conservatively — these are real guard rails, not rubber stamps.
 // Authenticated users are keyed by stable userId so IP rotation does not help an attacker.
@@ -136,6 +142,8 @@ export const LIMITS = {
     login: 10,          // 10 login attempts per 15 min per IP
     register: 5,        // 5 registration attempts/hr per IP
     forgotPassword: 3,  // 3 reset requests/hr per IP — tight to prevent email flooding
+    x402Buy: 120,       // 120 store challenges/purchases per hour — agents retry
+    x402Chat: 600,      // 600 paid inference calls/hr — paying traffic, keep roomy
 };
 
 /** Returns a 429 response with standard headers. */

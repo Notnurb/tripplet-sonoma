@@ -37,6 +37,18 @@ const serverSchema = z.object({
 
     ADMIN_USER_IDS: z.string().optional().default(''),
 
+    // ─── x402 Store ──────────────────────────────────────────────────────────
+    // All optional: with nothing set the storefront renders "not configured"
+    // and the paid endpoints answer 503. X402_PAY_TO is the merchant wallet
+    // that receives USDC. See docs/dev/x402-store.md.
+    X402_PAY_TO: z
+        .string()
+        .regex(/^0x[0-9a-fA-F]{40}$/, 'must be a 0x-prefixed EVM address')
+        .optional(),
+    X402_NETWORK: z.enum(['base', 'base-sepolia']).optional(),
+    X402_FACILITATOR_URL: z.string().url().optional(),
+    X402_FACILITATOR_API_KEY: z.string().min(1).optional(),
+
     // ─── Node ────────────────────────────────────────────────────────────────
     NODE_ENV: z.enum(['development', 'production', 'test']).optional().default('development'),
 });

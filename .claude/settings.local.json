@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-/Users/notnurb/Desktop/Sonomachat-main}/.claude/hooks/ding.sh\""
+          }
+        ]
+      }
+    ]
+  },
+  "spinnerTipsEnabled": false,
+  "prefersReducedMotion": false
+}

@@ -59,6 +59,9 @@ export async function middleware(request: NextRequest) {
         '/reset-password',
         '/sign-in',
         '/site-map',
+        // x402 storefront — agents and signed-out humans browse and pay here;
+        // every /api/x402 endpoint is payment- or bearer-gated, never cookie-gated.
+        '/store',
         '/terms',
         // Crawlers hit these unauthenticated — must never redirect to /login.
         '/sitemap.xml',

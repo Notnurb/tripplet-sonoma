@@ -120,3 +120,52 @@ create table if not exists oauth_access_tokens (
 create index if not exists oauth_access_tokens_refresh_idx on oauth_access_tokens (refresh_token_hash);
 create index if not exists oauth_access_tokens_user_idx on oauth_access_tokens (user_email);
 create index if not exists oauth_codes_expires_idx on oauth_authorization_codes (expires_at);
+
+-- ── x402 Store (agent-first, accountless) ────────────────────────────────────
+-- Backs /store + /api/x402/*. Purchases are paid over the x402 protocol (USDC
+-- on Base, HTTP 402 + X-PAYMENT header) with NO login anywhere: buying a pack
+-- mints a prepaid `trpl_x4_...` API key delivered inside the payment receipt.
+-- See src/lib/x402 and docs/dev/x402-store.md.
+
+-- One row per pack purchase / top-up attempt. The unique (network, payer,
+-- nonce) triple mirrors EIP-3009's on-chain replay protection: a re-sent
+-- X-PAYMENT header maps onto its original row and replays the stored receipt
+-- instead of double-granting. Per-call inference payments are deliberately
+-- NOT recorded here (the on-chain nonce is the replay guard for those).
+create table if not exists x402_payments (
+    id uuid primary key default gen_random_uuid(),
+    product_id text not null,
+    network text not null,
+    payer text not null,
+    nonce text not null,
+    pay_to text not null,
+    asset text not null,
+    amount_atomic text not null,
+    status text not null default 'pending', -- 'pending' | 'settled' | 'failed'
+    failure_reason text,
+    tx_hash text,
+    key_id uuid,                            -- prepaid key minted / topped up
+    receipt_json jsonb,
+    created_at timestamptz not null default now(),
+    settled_at timestamptz,
+    updated_at timestamptz not null default now(),
+    unique (network, payer, nonce)
+);
+
+create index if not exists x402_payments_status_idx on x402_payments (status, created_at);
+
+-- Prepaid inference keys sold by the store. Key material is HMAC-derived from
+-- the payment id (only the SHA-256 lands here), so replaying the original
+-- X-PAYMENT header can always re-surface a lost key. Credits are token-
+-- denominated and metered against actual upstream usage by /api/x402/chat.
+create table if not exists x402_api_keys (
+    id uuid primary key default gen_random_uuid(),
+    key_hash text not null unique,
+    key_prefix text not null,               -- first chars, for display only
+    label text not null default 'Prepaid',
+    credits_granted bigint not null,
+    credits_remaining bigint not null,
+    is_revoked boolean not null default false,
+    created_at timestamptz not null default now(),
+    last_used_at timestamptz
+);
