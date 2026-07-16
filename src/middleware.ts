@@ -7,7 +7,9 @@ const CSP = [
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: blob: https:",
     "font-src 'self' data:",
-    "connect-src 'self' https://api.groq.com https://opencode.ai https://*.e2b.dev https://*.spline.io wss://*.e2b.dev https://www.clarity.ms https://*.clarity.ms https://vitals.vercel-insights.com",
+    // en.wikipedia.org: the Triplepedia batch grabber (/tgrablockbatch) calls
+    // the Wikipedia Action API directly from the browser (link finder + turbo).
+    "connect-src 'self' https://api.groq.com https://opencode.ai https://*.e2b.dev https://*.spline.io wss://*.e2b.dev https://www.clarity.ms https://*.clarity.ms https://vitals.vercel-insights.com https://en.wikipedia.org",
     "frame-src 'self' https://*.spline.io https://*.e2b.dev",
     "media-src 'self'",
     "object-src 'none'",
@@ -65,6 +67,11 @@ export async function middleware(request: NextRequest) {
         '/sitemap',
         '/sitemap.txt',
         '/robots.txt',
+        // Triplepedia is a public knowledge base: reading, searching and
+        // exploring articles must not require an account (its GET APIs are
+        // already public + rate-limited). Import tools (/tgrablockbatch)
+        // stay auth-gated.
+        '/triplepedia',
     ]
 
     const isPublicPath = publicPaths.some((path) => pathname === path || pathname.startsWith(`${path}/`))
