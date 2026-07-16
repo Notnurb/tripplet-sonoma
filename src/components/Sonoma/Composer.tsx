@@ -4,6 +4,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import { MODELS, type Model } from '@/lib/ai/models';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import { cn } from '@/lib/utils';
+import ConnectorsMenu from './ConnectorsMenu';
 import {
     SonomaClip,
     SonomaSend,
@@ -47,6 +48,15 @@ interface SonomaComposerProps {
     onToggleCode?: () => void;
     deepCode?: boolean;
     onToggleDeepCode?: () => void;
+
+    // Show the Connectors (Composio apps) chip + menu. Opt-in so surfaces
+    // like the /dev panel stay unchanged.
+    connectors?: boolean;
+
+    // Hide the attach button and ignore pasted/dropped files. For surfaces
+    // where uploads can't go anywhere (e.g. the landing hero, which hands the
+    // message off across a navigation).
+    attachments?: boolean;
 
     placeholder?: string;
 }
@@ -300,6 +310,8 @@ export default function SonomaComposer({
     onToggleCode,
     deepCode,
     onToggleDeepCode,
+    connectors,
+    attachments = true,
     placeholder,
 }: SonomaComposerProps) {
     const modelList = models ?? MODELS;
@@ -335,6 +347,7 @@ export default function SonomaComposer({
 
     const onPaste = useCallback(
         (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+            if (!attachments) return;
             const items = e.clipboardData?.items;
             if (!items || items.length === 0) return;
             const pasted: File[] = [];
@@ -355,18 +368,19 @@ export default function SonomaComposer({
                 onAddFiles(pasted);
             }
         },
-        [onAddFiles],
+        [onAddFiles, attachments],
     );
 
     const onDrop = useCallback(
         (e: React.DragEvent<HTMLTextAreaElement>) => {
+            if (!attachments) return;
             const list = Array.from(e.dataTransfer?.files || []).filter((f) => f.type.startsWith('image/'));
             if (list.length > 0) {
                 e.preventDefault();
                 onAddFiles(list);
             }
         },
-        [onAddFiles],
+        [onAddFiles, attachments],
     );
 
     const onDragOver = useCallback((e: React.DragEvent<HTMLTextAreaElement>) => {
@@ -412,38 +426,42 @@ export default function SonomaComposer({
                 }}
             />
             <div className="mt-1.5 flex flex-wrap items-center gap-2">
-                <input
-                    ref={fileRef}
-                    type="file"
-                    multiple
-                    accept="image/*"
-                    className="hidden"
-                    onChange={onPick}
-                />
-                <button
-                    type="button"
-                    title="Attach files"
-                    onClick={() => fileRef.current?.click()}
-                    className={cn(
-                        'inline-flex h-8 w-8 max-md:h-9 max-md:w-9 items-center justify-center rounded-full transition-colors',
-                    )}
-                    style={{
-                        border: '1px solid var(--sonoma-border)',
-                        color: 'var(--sonoma-ink-2)',
-                        background: 'var(--sonoma-surface)',
-                        boxShadow: 'var(--sonoma-shadow-sm)',
-                    }}
-                    onMouseEnter={(e) => {
-                        e.currentTarget.style.background = 'var(--sonoma-surface-2)';
-                        e.currentTarget.style.borderColor = 'var(--sonoma-border-2)';
-                    }}
-                    onMouseLeave={(e) => {
-                        e.currentTarget.style.background = 'var(--sonoma-surface)';
-                        e.currentTarget.style.borderColor = 'var(--sonoma-border)';
-                    }}
-                >
-                    <SonomaClip />
-                </button>
+                {attachments && (
+                    <>
+                        <input
+                            ref={fileRef}
+                            type="file"
+                            multiple
+                            accept="image/*"
+                            className="hidden"
+                            onChange={onPick}
+                        />
+                        <button
+                            type="button"
+                            title="Attach files"
+                            onClick={() => fileRef.current?.click()}
+                            className={cn(
+                                'inline-flex h-8 w-8 max-md:h-9 max-md:w-9 items-center justify-center rounded-full transition-colors',
+                            )}
+                            style={{
+                                border: '1px solid var(--sonoma-border)',
+                                color: 'var(--sonoma-ink-2)',
+                                background: 'var(--sonoma-surface)',
+                                boxShadow: 'var(--sonoma-shadow-sm)',
+                            }}
+                            onMouseEnter={(e) => {
+                                e.currentTarget.style.background = 'var(--sonoma-surface-2)';
+                                e.currentTarget.style.borderColor = 'var(--sonoma-border-2)';
+                            }}
+                            onMouseLeave={(e) => {
+                                e.currentTarget.style.background = 'var(--sonoma-surface)';
+                                e.currentTarget.style.borderColor = 'var(--sonoma-border)';
+                            }}
+                        >
+                            <SonomaClip />
+                        </button>
+                    </>
+                )}
 
                 {onToggleBrowse && (
                     <ToolChip
@@ -481,6 +499,7 @@ export default function SonomaComposer({
                         compact={isMobile}
                     />
                 )}
+                {connectors && <ConnectorsMenu compact={isMobile} />}
 
                 <div className="min-w-0 flex-1" />
 

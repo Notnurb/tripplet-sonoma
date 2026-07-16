@@ -14,7 +14,6 @@ const columns = [
             { label: 'Features', href: '/features' },
             { label: 'Chat', href: '/chat' },
             { label: 'Code', href: '/code' },
-            { label: 'Arena', href: '/arena' },
             { label: 'Usage', href: '/usage' },
         ],
     },

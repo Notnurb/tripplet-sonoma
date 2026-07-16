@@ -155,6 +155,29 @@ export function SonomaFile({ size = 14, ...rest }: IconProps) {
     return <HI icon={File01Icon} size={size} {...(rest as object)} />;
 }
 
+// Plug / connector mark — used by the chat Connectors menu (Composio apps).
+export function SonomaPlug({ size = 16, color, ...rest }: IconProps) {
+    return (
+        <svg
+            width={size}
+            height={size}
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke={color || 'currentColor'}
+            strokeWidth={1.7}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden
+            {...rest}
+        >
+            <path d="M9 7V3.5" />
+            <path d="M15 7V3.5" />
+            <path d="M6.5 7h11v4a5.5 5.5 0 0 1-11 0V7Z" />
+            <path d="M12 16.5V19a2.5 2.5 0 0 1-2.5 2.5H8" />
+        </svg>
+    );
+}
+
 // Terminal / command-line mark — used by the Tripplet Sandboxed Linux (bash) skill.
 export function SonomaTerminal({ size = 16, color, ...rest }: IconProps) {
     return (
