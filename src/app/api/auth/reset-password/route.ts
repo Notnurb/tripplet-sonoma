@@ -5,6 +5,7 @@ import { hashPassword } from "@/lib/auth/password";
 import { parseBody, resetPasswordSchema } from "@/lib/validation";
 import { forgotPasswordLimiter, LIMITS, getRateLimitToken, rateLimitResponse } from "@/lib/security/rate-limit";
 import { logAuthFailure } from "@/lib/auth/log";
+import { invalidateSessionsNow } from "@/lib/auth/session-store";
 
 export async function POST(req: NextRequest) {
     try {
@@ -47,6 +48,12 @@ export async function POST(req: NextRequest) {
             `DELETE FROM "PasswordResetToken" WHERE "userId" = $1`,
             [resetTokenRecord.userId],
         );
+
+        // A reset means "I no longer trust whatever session(s) are out
+        // there" — revoke every already-issued token for this user, not just
+        // rotate the password hash. Without this, a token stolen before the
+        // reset kept working for its full 7-day life.
+        await invalidateSessionsNow(resetTokenRecord.userId).catch(() => { /* best-effort */ });
 
         return NextResponse.json({ success: true });
     } catch (error) {

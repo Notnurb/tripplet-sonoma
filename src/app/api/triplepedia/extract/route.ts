@@ -1,26 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth/session';
 import { searchLimiter, LIMITS, rateLimitResponse, getRateLimitToken } from '@/lib/security/rate-limit';
-
-const PRIVATE_IP_PATTERNS = [
-    /^localhost$/i,
-    /^127\./,
-    /^10\./,
-    /^172\.(1[6-9]|2\d|3[01])\./,
-    /^192\.168\./,
-    /^169\.254\./,
-    /^0\./,
-    /^::1$/,
-    /^::$/,
-    /^fc00:/i,
-    /^fd[0-9a-f]{2}:/i,
-    /^fe80:/i,
-];
-
-function isPrivateHost(hostname: string): boolean {
-    const lower = hostname.toLowerCase();
-    return PRIVATE_IP_PATTERNS.some(p => p.test(lower));
-}
+import { assertFetchableUrl } from '@/lib/ai/websearch';
 
 function validateExternalUrl(raw: string): URL | null {
     let parsed: URL;
@@ -30,14 +11,31 @@ function validateExternalUrl(raw: string): URL | null {
         return null;
     }
     if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return null;
-    if (isPrivateHost(parsed.hostname)) return null;
     return parsed;
 }
 
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
+const MAX_REDIRECTS = 3;
 
+// The URL is user-supplied, so this fetch must never reach internal
+// infrastructure: every hop (including each redirect target) goes through the
+// resolver-level SSRF guard, and redirects are followed manually so a public
+// URL 302-ing to an internal host is caught before the connect.
 async function fetchBounded(input: string, init: RequestInit, maxBytes = MAX_RESPONSE_BYTES) {
-    const res = await fetch(input, init);
+    let target = new URL(input);
+    let res: Response | null = null;
+    for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
+        await assertFetchableUrl(target);
+        res = await fetch(target.toString(), { ...init, redirect: 'manual' });
+        if (res.status >= 300 && res.status < 400) {
+            const loc = res.headers.get('location');
+            if (!loc || hop === MAX_REDIRECTS) throw new Error('Too many redirects.');
+            target = new URL(loc, target);
+            continue;
+        }
+        break;
+    }
+    if (!res) throw new Error('Fetch failed.');
     const lenHeader = res.headers.get('content-length');
     if (lenHeader && Number(lenHeader) > maxBytes) {
         throw new Error('Response too large');

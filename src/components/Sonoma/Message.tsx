@@ -261,7 +261,21 @@ export interface SonomaActivity {
     elapsedMs?: number;
 }
 
+/** 'composio_GITHUB_CREATE_AN_ISSUE' → { app: 'Github', action: 'create an issue' } */
+function connectorParts(tool: string): { app: string; action: string } {
+    const slug = tool.slice('composio_'.length);
+    const [app = '', ...rest] = slug.split('_');
+    return {
+        app: app ? app.charAt(0) + app.slice(1).toLowerCase() : 'connector',
+        action: rest.join(' ').toLowerCase(),
+    };
+}
+
 function ActivityLabel({ a }: { a: SonomaActivity }) {
+    if (a.tool.startsWith('composio_')) {
+        const { app, action } = connectorParts(a.tool);
+        return <>Using <span style={{ color: 'var(--sonoma-accent-2)' }}>{app}</span>{action ? ` · ${action}` : ''}</>;
+    }
     switch (a.tool) {
         case 'web_search':
             return <>Searching the web for <code style={{ fontFamily: 'var(--font-mono)' }}>&ldquo;{String(a.args.query ?? '')}&rdquo;</code></>;
@@ -376,6 +390,43 @@ function ActivityCard({ a }: { a: SonomaActivity }) {
                 )}
             </div>
         );
+    } else if (a.tool.startsWith('composio_') && (a.result || Object.keys(a.args ?? {}).length > 0)) {
+        const r = (a.result ?? {}) as { successful?: boolean; error?: string; data?: unknown };
+        body = (
+            <div className="flex flex-col gap-2">
+                {Object.keys(a.args ?? {}).length > 0 && (
+                    <pre
+                        className="max-h-[140px] overflow-auto text-[12px]"
+                        style={{
+                            fontFamily: 'var(--font-mono)',
+                            background: 'var(--sonoma-bg-2)',
+                            border: '1px solid var(--sonoma-border)',
+                            padding: 10,
+                            borderRadius: 10,
+                            color: 'var(--sonoma-ink-2)',
+                        }}
+                    >
+                        {JSON.stringify(a.args, null, 2)}
+                    </pre>
+                )}
+                {r.error && <div style={{ color: 'var(--destructive)' }}>{r.error}</div>}
+                {r.data !== undefined && (
+                    <pre
+                        className="max-h-[220px] overflow-auto whitespace-pre-wrap text-[12px]"
+                        style={{
+                            fontFamily: 'var(--font-mono)',
+                            background: 'var(--sonoma-bg-2)',
+                            border: '1px solid var(--sonoma-border)',
+                            padding: 10,
+                            borderRadius: 10,
+                            color: 'var(--sonoma-ink-2)',
+                        }}
+                    >
+                        {typeof r.data === 'string' ? r.data : JSON.stringify(r.data, null, 2)}
+                    </pre>
+                )}
+            </div>
+        );
     } else if (a.tool === 'mermaid_diagram' && a.result && typeof a.result === 'object') {
         const r = a.result as { source?: string };
         body = (
@@ -414,7 +465,7 @@ function ActivityCard({ a }: { a: SonomaActivity }) {
                     className="inline-flex h-4 w-4 items-center justify-center"
                     style={{ color: running ? 'var(--sonoma-accent)' : 'var(--sonoma-ok)' }}
                 >
-                    {a.tool === 'web_search' || a.tool === 'fetch_url' ? (
+                    {a.tool === 'web_search' || a.tool === 'fetch_url' || a.tool.startsWith('composio_') ? (
                         <SonomaBrowse size={14} />
                     ) : a.tool === 'run_bash' || a.tool === 'run_python' ? (
                         <SonomaTerminal size={14} />

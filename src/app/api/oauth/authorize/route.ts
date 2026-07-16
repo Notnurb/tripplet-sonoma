@@ -7,7 +7,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth/session';
-import { getClient, issueAuthCode, MCP_SCOPE } from '@/lib/mcp/oauth';
+import { getClient, issueAuthCode, isValidScope, MCP_SCOPE } from '@/lib/mcp/oauth';
 
 export const runtime = 'nodejs';
 
@@ -102,6 +102,9 @@ export async function POST(request: NextRequest) {
     }
 
     const scope = body.scope?.trim() || MCP_SCOPE;
+    if (!isValidScope(scope)) {
+        return NextResponse.json({ error: 'invalid_scope' }, { status: 400 });
+    }
     const code = await issueAuthCode({
         clientId: client_id,
         userEmail: email,

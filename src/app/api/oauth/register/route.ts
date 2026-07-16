@@ -6,6 +6,7 @@ import { NextRequest } from 'next/server';
 import { isDbConfigured } from '@/lib/db/neon';
 import { registerClient } from '@/lib/mcp/oauth';
 import { corsJson, preflight } from '@/lib/mcp/http';
+import { oauthRegisterLimiter, LIMITS, getRateLimitToken } from '@/lib/security/rate-limit';
 
 export const runtime = 'nodejs';
 
@@ -16,6 +17,15 @@ export function OPTIONS() {
 export async function POST(request: NextRequest) {
     if (!isDbConfigured()) {
         return corsJson({ error: 'server_error', error_description: 'Not configured.' }, { status: 503 });
+    }
+
+    try {
+        await oauthRegisterLimiter.check(LIMITS.oauthRegister, getRateLimitToken(request));
+    } catch {
+        return corsJson(
+            { error: 'access_denied', error_description: 'Too many client registrations. Try again later.' },
+            { status: 429 },
+        );
     }
 
     let body: {

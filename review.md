@@ -5,11 +5,11 @@
 > repo. Read this file first. Only open the cited files if you want to verify a
 > specific claim or dig deeper. Keep it updated as the codebase changes.
 >
-> Last updated 2026-07-08. This file states claims and evidence only — it does
+> Last updated 2026-07-10. This file states claims and evidence only — it does
 > NOT assign itself scores (a scorecard grading itself is worthless; run your
 > own judge for a verdict). All claims below are verified locally:
 > `npm run type-check`, `npm run lint`, `npm run check:docs`,
-> `npm run test:coverage` (258 tests / 32 files, coverage gate enforced — re-run
+> `npm run test:coverage` (283 tests / 37 files, coverage gate enforced — re-run
 > to confirm the current count rather than trusting this number), and a full
 > production `npx next build` all pass green.
 
@@ -154,43 +154,73 @@ file. Prefer verifying against the cited files over re-scanning the tree.
   to both `/api/chat` search injection and Sonoma `fetch_url` (the largest
   injection surface). Properties pinned by `tests/unit/prompt-guardrails.test.ts`
   (forged-close-tag, fresh-nonce, nonce-echo-strip).
-- **Known findings from a fleet security audit (2026-07-08), not yet fixed.**
-  A 6-agent audit fanned out across auth, OAuth, MCP/dev-keys, Python/code,
-  memory, and the DB/security-lib layer (4 more agents — cloud-env deep-dive,
+- **All 8 findings from the 2026-07-08 fleet security audit are now fixed**
+  (a 6-agent audit fanned out across auth, OAuth, MCP/dev-keys, Python/code,
+  memory, and the DB/security-lib layer; 4 more agents — cloud-env deep-dive,
   triplepedia, integrations/SSRF, DB layer — were killed mid-run by a session
-  interruption and were NOT re-run; those surfaces are unaudited this round).
-  The two real, exploitable HIGH findings (Python sandbox RCE, chat-route
-  IDOR) are fixed above. Everything else found, ranked, left for a future
-  pass rather than silently dropped:
-  - **HIGH** — `src/app/api/auth/login/route.ts`: user-enumeration via a
-    timing oracle (bcrypt only runs for known emails) plus a distinct
-    "no password login" message for passwordless accounts.
-  - **HIGH** — same file: the failed-login lockout counter is a per-instance
-    in-memory `LRUCache`, not backed by the shared Redis store `rate-limit.ts`
-    already uses — on multi-instance/serverless it doesn't meaningfully
-    throttle brute force.
-  - **MEDIUM** — `src/lib/python/run.ts`: no cap on *concurrent* worker
-    executions (each up to 512MB) — a single user firing many parallel
-    `/api/execute` requests can exhaust server memory.
-  - **MEDIUM** — `src/app/api/auth/logout/route.ts`,
-    `reset-password/route.ts`: sessions are stateless JWTs with no
-    server-side revocation — logout and password reset don't invalidate
-    already-issued tokens (a stolen token keeps working for its full 7-day
-    life even after the user "logs out everywhere" or resets their password).
-  - **MEDIUM** — `src/app/api/mcp/route.ts`: the OAuth token's `scope` is
-    validated at issuance but never checked by MCP tool handlers — latent
-    (only one scope exists today), becomes a real gap the day a narrower
-    scope is introduced.
-  - **LOW** — `src/lib/mcp/oauth.ts` refresh-token rotation has no reuse
-    (replay) detection — presenting an already-rotated token is rejected but
-    doesn't revoke the active descendant family.
-  - **LOW** — `src/app/api/code/publish/route.ts` GET (unauthenticated):
-    lists every user's published sites including `ownerUserId`, and serves
-    full source `files[]` by slug, not just rendered HTML.
-  - **LOW** — `src/app/api/oauth/register/route.ts`: open, unauthenticated
-    dynamic client registration has no rate limit (unbounded row growth; also
-    the enabling primitive for the investigated-and-closed consent scenario
-    above).
+  interruption and were NOT re-run; those surfaces remain unaudited, see
+  below). The two exploitable HIGH findings (Python sandbox RCE, chat-route
+  IDOR) were fixed in the prior pass (see above); this pass closed the rest:
+  - **FIXED (was HIGH)** — login user-enumeration via timing oracle:
+    `src/app/api/auth/login/route.ts` used to skip the bcrypt call entirely
+    for unknown emails (and returned a distinct "no password login" message
+    for passwordless accounts), so response time and message content both
+    leaked account existence. Now `verifyPassword` always runs — against a
+    fixed `DUMMY_PASSWORD_HASH` (`src/lib/auth/password.ts`) when there's no
+    real hash to check — so unknown-email, no-password, and wrong-password
+    all cost the same bcrypt call and return the identical `"Invalid email or
+    password"` message. Pinned by `tests/unit/auth-routes.test.ts`.
+  - **FIXED (was HIGH)** — non-shared lockout counter: the failed-login
+    counter was a per-instance in-memory `LRUCache`, so on multi-instance/
+    serverless an attacker could just land on a fresh instance to reset it.
+    Now backed by a shared Redis-or-LRU-fallback KV store (`lockoutGet`/
+    `lockoutIncr`/`lockoutClear` in `src/lib/security/rate-limit.ts`), the
+    same pattern the rate limiters already use. Falls open to the local LRU
+    on a Redis error rather than hard-locking every login.
+  - **FIXED (was MEDIUM)** — no Python worker concurrency cap:
+    `src/lib/python/run.ts` now enforces `PYTHON_MAX_CONCURRENT` (default 8)
+    — extra `runPython` calls queue (pure backpressure, nothing is rejected)
+    instead of spawning unbounded 512MB workers. A diagnostic hook
+    (`pythonConcurrencyStats()`) makes the cap and queue depth directly
+    testable; pinned by a real multi-worker test in
+    `tests/unit/run-python.test.ts` (deterministic, not timing-based — the
+    cap is enforced synchronously before any worker even starts loading).
+  - **FIXED (was MEDIUM)** — no session revocation on logout/reset: stateless
+    JWTs had no way to invalidate an already-issued token, so a copy taken
+    before logout or a password reset kept working for its full 7-day life.
+    New `src/lib/auth/session-store.ts` tracks a per-user "invalidated
+    before" cutoff (Redis-or-LRU-fallback, same shared-KV pattern); `auth()`
+    (`src/lib/auth/session.ts`) now rejects any token whose `iat` predates
+    the cutoff, and both `logout` and `reset-password` set it. Pinned by
+    `tests/unit/session-revocation.test.ts` and a case in
+    `tests/unit/auth-reset-routes.test.ts`.
+  - **FIXED (was MEDIUM)** — MCP scope never checked at point of use: the
+    OAuth token's `scope` was validated at issuance but `tools/call` in
+    `src/app/api/mcp/route.ts` never re-checked it. Now `tools/call` requires
+    `hasScope(token.scope, MCP_SCOPE)`; the authorize route also validates
+    the requested scope against a known set (`isValidScope`) instead of
+    echoing back an arbitrary client-supplied string. Both in
+    `src/lib/mcp/oauth.ts`, pinned by `tests/unit/mcp-scope.test.ts`.
+  - **FIXED (was LOW)** — refresh-token reuse (replay) had no detection:
+    presenting an already-rotated refresh token just failed quietly, without
+    treating that reuse as the compromise signal it is. `oauth_access_tokens`
+    gained a `family_id` column (root token_hash of a rotation chain,
+    `db/schema.sql`); `rotateRefreshToken` now detects a revoked-row replay
+    and revokes the **entire family** in response — including any
+    still-live descendant an attacker minted from the stolen token — instead
+    of only rejecting the one replayed request. Pinned by
+    `tests/unit/oauth-refresh-reuse.test.ts` (proves the attacker's sibling
+    token gets revoked too, not just the replayed one).
+  - **FIXED (was LOW)** — `src/app/api/code/publish/route.ts` GET
+    (unauthenticated) used to return `ownerUserId` for every published site
+    and, for a single slug, the full source `files[]` array. Now strips
+    `ownerUserId` and only returns rendered `html` + public metadata — never
+    raw source. Pinned by `tests/unit/code-publish-route.test.ts`.
+  - **FIXED (was LOW)** — `src/app/api/oauth/register/route.ts` (dynamic
+    client registration) had no rate limit despite being open and
+    unauthenticated by design. Added a dedicated per-IP limiter
+    (`oauthRegisterLimiter`, 20/hr). Pinned by
+    `tests/unit/oauth-register-route.test.ts`.
   - Unaudited this round (agents killed before completing): cloud-env command
     execution beyond the already-fixed workspace IDOR (allowlist-bypass /
     path-traversal-in-sync questions), Triplepedia, Telegram/connect/

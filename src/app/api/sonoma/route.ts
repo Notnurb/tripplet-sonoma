@@ -18,6 +18,7 @@ import { verifyDevToken, DEV_UNLOCK_COOKIE } from '@/lib/devAccess';
 import { chatLimiter, LIMITS, rateLimitResponse, getRateLimitToken } from '@/lib/security/rate-limit';
 import { buildSonomaSystemPrompt, type SonomaPage } from '@/lib/sonoma/prompt';
 import { SONOMA_TOOLS, runTool, type ToolCall } from '@/lib/sonoma/tools';
+import { getComposioToolset } from '@/lib/composio/tools';
 import { streamOnce } from '@/lib/sonoma/upstream';
 import { runDeepCodePipeline } from '@/lib/sonoma/deepcode';
 
@@ -73,7 +74,12 @@ export async function POST(req: NextRequest) {
     }
     const { messages, reason = false, browse = false, code = false, deepCode = false, sandbox = false, page = 'chat', model, dev } = body;
     // The run_bash tool is only offered when the Sandboxed Linux skill is on.
-    const activeTools = sandbox ? SONOMA_TOOLS : SONOMA_TOOLS.filter((t) => t.function.name !== 'run_bash');
+    const builtinTools = sandbox ? SONOMA_TOOLS : SONOMA_TOOLS.filter((t) => t.function.name !== 'run_bash');
+    // Connector (Composio) tools for the apps this user has linked in
+    // Settings → Connectors. Guests and un-configured deploys get none, and
+    // any Composio failure degrades to none — chat must never block on it.
+    const composio = await getComposioToolset(userId);
+    const activeTools = [...builtinTools, ...(composio?.defs ?? [])];
     if (!Array.isArray(messages) || messages.length === 0) {
         return new Response('messages required', { status: 400 });
     }
@@ -155,7 +161,7 @@ export async function POST(req: NextRequest) {
             // guardrails), so they are dropped — same policy as the DeepCode
             // pipeline. The app's own client never sends them anyway.
             const history: Array<Record<string, unknown>> = [
-                { role: 'system', content: buildSonomaSystemPrompt(page, reason, browse, code, model, deepCode, sandbox) },
+                { role: 'system', content: buildSonomaSystemPrompt(page, reason, browse, code, model, deepCode, sandbox, composio?.apps ?? []) },
                 ...messages.filter((m) => m.role !== 'system'),
             ];
 
@@ -229,7 +235,12 @@ export async function POST(req: NextRequest) {
                             status: 'running',
                             args: tc.args,
                         });
-                        const out = await runTool(tc);
+                        // Connector calls route through Composio (per-user
+                        // scoping lives server-side there); everything else is
+                        // a built-in tool.
+                        const out = composio?.canRun(tc.name)
+                            ? await composio.run(tc)
+                            : await runTool(tc);
                         let parsed: unknown = out;
                         try {
                             parsed = JSON.parse(out);

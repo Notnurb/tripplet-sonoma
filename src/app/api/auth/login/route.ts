@@ -1,19 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { LRUCache } from "lru-cache";
 import { findAuthUserByEmail } from "@/lib/auth/user-store";
-import { verifyPassword } from "@/lib/auth/password";
+import { verifyPassword, DUMMY_PASSWORD_HASH } from "@/lib/auth/password";
 import { signToken } from "@/lib/auth/jwt";
-import { loginLimiter, LIMITS, getRateLimitToken, rateLimitResponse } from "@/lib/security/rate-limit";
+import { loginLimiter, LIMITS, getRateLimitToken, rateLimitResponse, lockoutGet, lockoutIncr, lockoutClear } from "@/lib/security/rate-limit";
 import { parseBody, loginSchema } from "@/lib/validation";
 import { logAuthFailure } from "@/lib/auth/log";
 
 const ACCOUNT_LOCKOUT_THRESHOLD = 5;
 const ACCOUNT_LOCKOUT_TTL_MS = 15 * 60 * 1000;
-
-const failedLoginCache = new LRUCache<string, number>({
-    max: 100000,
-    ttl: ACCOUNT_LOCKOUT_TTL_MS,
-});
 
 export async function POST(req: NextRequest) {
     try {
@@ -28,9 +22,11 @@ export async function POST(req: NextRequest) {
         if (validationError) return validationError;
         const { email, password } = data;
 
-        // Account lockout: track failed attempts per email
+        // Account lockout: track failed attempts per email, in a store shared
+        // across instances (Redis when configured) so an attacker can't just
+        // land on a fresh serverless instance to reset the counter.
         const lockKey = `lockout:${email.toLowerCase().trim()}`;
-        const failedAttempts = failedLoginCache.get(lockKey) || 0;
+        const failedAttempts = await lockoutGet(lockKey);
         if (failedAttempts >= ACCOUNT_LOCKOUT_THRESHOLD) {
             return NextResponse.json(
                 { error: "Account temporarily locked due to too many failed attempts. Try again in 15 minutes." },
@@ -40,27 +36,18 @@ export async function POST(req: NextRequest) {
 
         const user = await findAuthUserByEmail(email);
 
-        if (!user) {
-            failedLoginCache.set(lockKey, failedAttempts + 1);
-            return NextResponse.json(
-                { error: "Invalid email or password" },
-                { status: 401 }
-            );
-        }
+        // Enumeration/timing-oracle guard: always run a bcrypt compare, even
+        // when the account doesn't exist or has no password, against a fixed
+        // dummy hash. bcrypt is by far the slowest step here, so skipping it
+        // for unknown emails (as the old code did) made "no such account"
+        // measurably faster than "wrong password" — an attacker can enumerate
+        // valid emails purely from response timing. Comparing against a
+        // constant dummy hash keeps the cost — and the response — identical
+        // for "no such user", "no password set", and "wrong password".
+        const isValid = await verifyPassword(password, user?.passwordHash ?? DUMMY_PASSWORD_HASH);
 
-        if (!user.passwordHash) {
-            failedLoginCache.set(lockKey, failedAttempts + 1);
-            return NextResponse.json(
-                { error: "This account does not have a password login. Reset your password first." },
-                { status: 401 }
-            );
-        }
-
-        // Verify password
-        const isValid = await verifyPassword(password, user.passwordHash);
-
-        if (!isValid) {
-            failedLoginCache.set(lockKey, failedAttempts + 1);
+        if (!user || !user.passwordHash || !isValid) {
+            await lockoutIncr(lockKey, ACCOUNT_LOCKOUT_TTL_MS);
             return NextResponse.json(
                 { error: "Invalid email or password" },
                 { status: 401 }
@@ -68,7 +55,7 @@ export async function POST(req: NextRequest) {
         }
 
         // On successful login, clear the lockout counter
-        failedLoginCache.delete(lockKey);
+        await lockoutClear(lockKey);
 
         // Sign JWT
         const token = await signToken({ userId: user.id, email: user.email });

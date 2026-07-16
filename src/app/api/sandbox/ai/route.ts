@@ -8,7 +8,7 @@ export const maxDuration = 30;
 
 // Stricter limits than normal chat — sandbox-callable AI is meant for
 // embedded demos, not bulk inference. 30 calls / hour / user (or IP for guests).
-const sandboxLimiter = rateLimit({ interval: 60 * 60 * 1000, uniqueTokenPerInterval: 10000 });
+const sandboxLimiter = rateLimit({ name: 'sandbox', interval: 60 * 60 * 1000, uniqueTokenPerInterval: 10000 });
 const SANDBOX_LIMIT_PER_HOUR = 30;
 const GUEST_SANDBOX_LIMIT_PER_HOUR = 10;
 

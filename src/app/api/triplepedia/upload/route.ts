@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth/session';
-import { searchLimiter, LIMITS, rateLimitResponse, getRateLimitToken } from '@/lib/security/rate-limit';
+import { uploadLimiter, LIMITS, rateLimitResponse, getRateLimitToken } from '@/lib/security/rate-limit';
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5 MB
 const ALLOWED_MIMES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
@@ -14,7 +14,7 @@ export async function POST(req: NextRequest) {
 
         const token = getRateLimitToken(req, userId);
         try {
-            await searchLimiter.check(LIMITS.search, token); // Reuse search limiter for uploads
+            await uploadLimiter.check(LIMITS.upload, token);
         } catch {
             return rateLimitResponse();
         }

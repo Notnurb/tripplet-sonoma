@@ -38,7 +38,11 @@ export async function GET() {
         }
     } catch (error) {
         checks.database = 'error';
-        dbDetail = error instanceof Error ? error.message : 'unknown database error';
+        // The endpoint is unauthenticated — raw driver messages can leak
+        // hostnames/connection details, so keep the detail generic here and
+        // put the real error in the server log for the operator.
+        console.error('[health] database check failed', error);
+        dbDetail = 'database unreachable';
     }
 
     // groq/opencodeZen are informational; a degraded auth path or DB failure is

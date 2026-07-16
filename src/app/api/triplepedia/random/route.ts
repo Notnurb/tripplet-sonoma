@@ -1,11 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { isDbConfigured } from '@/lib/db/neon';
 import { fetchRandomPublishedArticle } from '@/lib/triplepedia/server';
+import { searchLimiter, LIMITS, rateLimitResponse, getRateLimitToken } from '@/lib/security/rate-limit';
 
 export async function GET(req: NextRequest) {
     try {
+        try {
+            await searchLimiter.check(LIMITS.search, getRateLimitToken(req));
+        } catch {
+            return rateLimitResponse();
+        }
+
         if (!isDbConfigured()) {
-            return NextResponse.json({ error: 'Database not configured' }, { status: 503 });
+            return NextResponse.json({ error: 'Triplepedia is temporarily unavailable — please try again soon.' }, { status: 503 });
         }
 
         const category = req.nextUrl.searchParams.get('category') || null;

@@ -9,6 +9,18 @@ import { loadSettings, updateSetting, applySettings, SETTINGS_EVENT } from '@/li
 import { HugeiconsIcon } from '@hugeicons/react';
 import { Loading01Icon } from '@hugeicons/core-free-icons';
 import MemoryPanel from '@/components/settings/MemoryPanel';
+import ConnectorsPanel from '@/components/settings/ConnectorsPanel';
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+    AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 
 type ThemeId = string;
 
@@ -56,6 +68,10 @@ export default function SettingsPage() {
     const [newPassword, setNewPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
     const [savingPassword, setSavingPassword] = useState(false);
+
+    const [deletePassword, setDeletePassword] = useState('');
+    const [deletingAccount, setDeletingAccount] = useState(false);
+    const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
 
     useEffect(() => {
         const s = loadSettings();
@@ -158,6 +174,24 @@ export default function SettingsPage() {
             toast.error(e instanceof Error ? e.message : 'Failed to update password');
         } finally {
             setSavingPassword(false);
+        }
+    };
+
+    const deleteAccount = async () => {
+        if (!deletePassword) return;
+        setDeletingAccount(true);
+        try {
+            const res = await fetch('/api/user/account', {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ password: deletePassword }),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(data.error || 'Failed to delete account');
+            window.location.href = '/';
+        } catch (e) {
+            toast.error(e instanceof Error ? e.message : 'Failed to delete account');
+            setDeletingAccount(false);
         }
     };
 
@@ -317,6 +351,63 @@ export default function SettingsPage() {
                     </div>
                 </div>
             </section>
+
+            <section className="space-y-4">
+                <div>
+                    <h2 className="text-sm font-semibold uppercase tracking-wide text-destructive">Danger Zone</h2>
+                    <p className="text-xs text-muted-foreground mt-1">
+                        Permanently delete your account and all associated data. This cannot be undone.
+                    </p>
+                </div>
+
+                <div className="space-y-3 rounded-xl border border-destructive/30 p-5">
+                    <label className="text-sm font-medium" htmlFor="settings-delete-password">
+                        Enter your password to confirm
+                    </label>
+                    <Input
+                        id="settings-delete-password"
+                        type="password"
+                        value={deletePassword}
+                        onChange={(e) => setDeletePassword(e.target.value)}
+                        placeholder="Current password"
+                        autoComplete="current-password"
+                    />
+
+                    <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+                        <AlertDialogTrigger
+                            render={
+                                <Button variant="destructive" disabled={!deletePassword || deletingAccount} />
+                            }
+                        >
+                            Delete account
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                            <AlertDialogHeader>
+                                <AlertDialogTitle>Delete your account?</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                    This permanently deletes your account, conversations, files, and usage
+                                    history. This action cannot be undone.
+                                </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                                <AlertDialogCancel disabled={deletingAccount}>Cancel</AlertDialogCancel>
+                                <AlertDialogAction
+                                    variant="destructive"
+                                    disabled={deletingAccount}
+                                    onClick={deleteAccount}
+                                >
+                                    {deletingAccount && (
+                                        <HugeiconsIcon icon={Loading01Icon} className="animate-spin mr-2" size={14} />
+                                    )}
+                                    Delete account
+                                </AlertDialogAction>
+                            </AlertDialogFooter>
+                        </AlertDialogContent>
+                    </AlertDialog>
+                </div>
+            </section>
+
+            <ConnectorsPanel />
 
             <MemoryPanel />
         </div>

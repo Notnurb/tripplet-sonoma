@@ -114,11 +114,21 @@ create table if not exists oauth_access_tokens (
     refresh_expires_at timestamptz,
     is_revoked boolean not null default false,
     created_at timestamptz not null default now(),
-    last_used_at timestamptz
+    last_used_at timestamptz,
+    -- All tokens descended from one original grant share a family_id (the
+    -- root token_hash). Lets refresh-token rotation detect REUSE of an
+    -- already-rotated token (a signal the token was stolen) and revoke the
+    -- whole family in one shot, not just the replayed row. NULL on rows
+    -- issued before this column existed — those simply can't cascade.
+    family_id text
 );
+
+-- Idempotent add for databases created before family_id existed.
+alter table if exists oauth_access_tokens add column if not exists family_id text;
 
 create index if not exists oauth_access_tokens_refresh_idx on oauth_access_tokens (refresh_token_hash);
 create index if not exists oauth_access_tokens_user_idx on oauth_access_tokens (user_email);
+create index if not exists oauth_access_tokens_family_idx on oauth_access_tokens (family_id);
 create index if not exists oauth_codes_expires_idx on oauth_authorization_codes (expires_at);
 
 -- ── x402 Store (agent-first, accountless) ────────────────────────────────────

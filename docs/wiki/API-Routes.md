@@ -37,4 +37,4 @@
 
 ## Experimental / one-off surfaces (may be stale)
 
-Pages, not necessarily backed by dedicated API routes: `/arena`, `/hivemind`, `/pixel`, `/spark`, `/studio`, `/skins`, `/generate`, `/environment`, `/tgrablockbatch`, `/trippletgrabthing`, `/v1/chat`, `/v2/chat`. Per `CLAUDE.md`, treat these as prototypes unless a task specifically names one — don't assume they're load-bearing or well-tested.
+Pages, not necessarily backed by dedicated API routes: `/hivemind`, `/pixel`, `/spark`, `/studio`, `/skins`, `/generate`, `/environment`, `/tgrablockbatch`, `/trippletgrabthing`, `/v1/chat`, `/v2/chat`. Per `CLAUDE.md`, treat these as prototypes unless a task specifically names one — don't assume they're load-bearing or well-tested.

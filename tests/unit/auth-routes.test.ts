@@ -88,14 +88,14 @@ describe('POST /api/auth/register', () => {
         usersByEmail.set('taken@x.com', { id: 'id-taken@x.com', email: 'taken@x.com', name: null, passwordHash: validHash });
         const res = await register(authReq('/api/auth/register', { email: 'taken@x.com', password: 'correct-horse-battery' }));
         expect(res.status).toBe(400);
-        expect((await res.json()).error).toBe('User already exists');
+        expect((await res.json()).error).toBe('An account with this email already exists — try signing in instead.');
     });
 
     it('maps a create-time duplicate race to 400 (not 500)', async () => {
         createShouldThrowDuplicate = true;
         const res = await register(authReq('/api/auth/register', { email: 'race@x.com', password: 'correct-horse-battery' }));
         expect(res.status).toBe(400);
-        expect((await res.json()).error).toBe('User already exists');
+        expect((await res.json()).error).toBe('An account with this email already exists — try signing in instead.');
     });
 
     it('rejects a common/breached password via schema → 400', async () => {
@@ -147,14 +147,16 @@ describe('POST /api/auth/login', () => {
         expect((await res.json()).error).toBe('Invalid email or password');
     });
 
-    it('rejects an account with no password hash → 401', async () => {
+    it('rejects an account with no password hash → 401 (same generic message, no enumeration)', async () => {
         const email = 'nopw@x.com';
         const user: FakeUser = { id: `id-${email}`, email, name: null, passwordHash: null };
         usersByEmail.set(email, user);
         usersById.set(user.id, user);
         const res = await login(authReq('/api/auth/login', { email, password: 'correct-horse-battery' }));
         expect(res.status).toBe(401);
-        expect((await res.json()).error).toMatch(/does not have a password login/);
+        // Previously a distinct "no password login" message leaked account
+        // state; now it's identical to the wrong-password / unknown-user case.
+        expect((await res.json()).error).toBe('Invalid email or password');
     });
 
     it('locks the account after 5 failed attempts → 429', async () => {
@@ -188,8 +190,8 @@ describe('POST /api/auth/login', () => {
 });
 
 describe('POST /api/auth/logout', () => {
-    it('returns 200 and expires the auth cookie', async () => {
-        const res = await logout();
+    it('returns 200 and expires the auth cookie (no session cookie present)', async () => {
+        const res = await logout(authReq('/api/auth/logout', undefined, { method: 'POST' }));
         expect(res.status).toBe(200);
         const setCookie = res.headers.get('set-cookie') ?? '';
         expect(setCookie).toContain('auth_token=');

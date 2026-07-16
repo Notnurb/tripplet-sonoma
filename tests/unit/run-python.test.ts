@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { runPython } from '@/lib/python/run';
+import { runPython, pythonConcurrencyStats } from '@/lib/python/run';
 
 // These run REAL CPython (Pyodide). The first call pays the interpreter load
 // (~5-10s), so timeouts are generous.
@@ -75,4 +75,30 @@ describe('runPython', () => {
         expect(r.output.trim()).toBe('{"a": 2}');
         expect(r.exitCode).toBe(0);
     }, 60_000);
+
+    // Regression test for a real resource-exhaustion gap: each worker can hold
+    // up to 512MB, and nothing capped how many ran at once — a burst of
+    // parallel /api/execute or Sonoma run_python calls could spawn unbounded
+    // workers and OOM the server process. runPython now queues past the cap
+    // instead of spawning unbounded workers.
+    it('caps concurrent executions and queues the rest (memory-exhaustion guard)', async () => {
+        const { max } = pythonConcurrencyStats();
+        expect(max).toBeGreaterThan(0);
+
+        const runs: ReturnType<typeof runPython>[] = [];
+        for (let i = 0; i < max + 1; i++) {
+            runs.push(runPython(`import time\ntime.sleep(0.05)\nprint(${i})`));
+        }
+        // runPython's slot-acquisition runs synchronously up to its first
+        // await, so by the time this loop returns (no await inside it), the
+        // cap has already been enforced — no timing race to poll for.
+        expect(pythonConcurrencyStats()).toEqual({ active: max, queued: 1, max });
+
+        const results = await Promise.all(runs);
+        results.forEach((r, i) => {
+            expect(r.output.trim()).toBe(String(i));
+            expect(r.exitCode).toBe(0);
+        });
+        expect(pythonConcurrencyStats()).toEqual({ active: 0, queued: 0, max });
+    }, 120_000);
 });

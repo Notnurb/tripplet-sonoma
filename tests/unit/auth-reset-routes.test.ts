@@ -21,6 +21,7 @@ vi.mock('@/lib/db/neon', () => ({
 
 import { POST as forgot } from '@/app/api/auth/forgot-password/route';
 import { POST as reset } from '@/app/api/auth/reset-password/route';
+import { sessionsInvalidatedAt } from '@/lib/auth/session-store';
 
 let ipCounter = 0;
 function freshIp(): string {
@@ -115,5 +116,21 @@ describe('POST /api/auth/reset-password', () => {
     it('rejects a weak password via schema → 400', async () => {
         const res = await reset(req('/api/auth/reset-password', { token: 'd'.repeat(40), password: 'password123' }));
         expect(res.status).toBe(400);
+    });
+
+    // Regression test for a real gap: resetting the password rotated the
+    // hash but did nothing to already-issued JWTs — a token stolen before
+    // the reset kept working for its full 7-day life. Now every reset
+    // revokes all sessions for that user via the shared invalidation store.
+    it('revokes all existing sessions for the user on a successful reset', async () => {
+        const before = await sessionsInvalidatedAt('u-revoke-me');
+        expect(before).toBe(0); // never revoked yet
+
+        queryOneImpl.fn.mockResolvedValue({ id: 'tok3', userId: 'u-revoke-me', expiresAt: new Date(Date.now() + 60_000).toISOString() });
+        const res = await reset(req('/api/auth/reset-password', { token: 'e'.repeat(40), password: strongPw }));
+        expect(res.status).toBe(200);
+
+        const after = await sessionsInvalidatedAt('u-revoke-me');
+        expect(after).toBeGreaterThan(0); // cutoff now set — old tokens are revoked
     });
 });

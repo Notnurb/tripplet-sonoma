@@ -23,7 +23,7 @@ export async function POST(req: NextRequest) {
 
         if (existingUser) {
             return NextResponse.json(
-                { error: "User already exists" },
+                { error: "An account with this email already exists — try signing in instead." },
                 { status: 400 }
             );
         }
@@ -51,7 +51,7 @@ export async function POST(req: NextRequest) {
     } catch (error: unknown) {
         if (isDuplicateUserError(error)) {
             return NextResponse.json(
-                { error: "User already exists" },
+                { error: "An account with this email already exists — try signing in instead." },
                 { status: 400 }
             );
         }

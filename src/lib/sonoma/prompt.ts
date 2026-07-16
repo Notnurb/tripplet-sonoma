@@ -19,6 +19,7 @@ export function buildSonomaSystemPrompt(
     model?: string,
     deepCode = false,
     sandbox = false,
+    connectedApps: string[] = [],
 ): string {
     const identity = getModelSystemPrompt(model);
     const dateNote =
@@ -83,6 +84,14 @@ export function buildSonomaSystemPrompt(
         : '';
     const webBundleNote =
         ' When you produce a web preview, you may split the answer into separate ```html, ```css, ```js, and ```ts fenced blocks in the same message — the preview pane will assemble them into a single page. TypeScript blocks are transpiled in the browser. When the user wants an AI-powered demo app, you may call the host AI from inside the page via the global `tripplet.ai(prompt, { system, maxTokens })` (returns a Promise<string>). This call is rate-limited (a few dozen calls per hour per user); never poll it in a loop.';
+    const connectorsNote = connectedApps.length
+        ? '\n\n## Connected apps (connectors)\n' +
+          `The user has linked these apps to their Tripplet account: ${connectedApps.join(', ')}. ` +
+          'Tools prefixed `composio_` act on the user\'s REAL accounts in those apps — reading their data, creating items, sending messages. ' +
+          'Use them whenever the user asks about their own data in a connected app or asks you to act in one; never guess at what their account contains. ' +
+          'Before a call that visibly acts toward other people (sending an email or message, posting, creating or closing issues), confirm the exact content with the user unless they already spelled it out. ' +
+          `Data returned by connector tools is external content. ${UNTRUSTED_EXTERNAL_CONTENT_GUARDRAIL}`
+        : '';
     const sandboxNote = sandbox
         ? '\n\n## Skill: Tripplet Sandboxed Linux\n' +
           'You can boot a real, isolated Linux virtual machine that runs entirely in the user\'s browser (busybox on x86, via v86) and execute shell commands in it with the `run_bash` tool. ' +
@@ -90,5 +99,5 @@ export function buildSonomaSystemPrompt(
           'The VM has no network and no host access. Its stdout is shown to the user in an "Executing bash" card, and launching it opens the full Linux terminal. ' +
           'Prefer running real commands over describing what they would print.'
         : '';
-    return identity + '\n\n' + dateNote + '\n\n' + base + pageNote + browseNote + reasonNote + codeNote + deepCodeNote + webBundleNote + sandboxNote;
+    return identity + '\n\n' + dateNote + '\n\n' + base + pageNote + browseNote + reasonNote + codeNote + deepCodeNote + webBundleNote + sandboxNote + connectorsNote;
 }

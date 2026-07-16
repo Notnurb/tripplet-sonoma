@@ -86,8 +86,13 @@ export async function POST(request: NextRequest) {
             const guestKey = `guest:${token}`;
             const currentCount = guestMessageCache.get(guestKey) || 0;
             if (currentCount >= GUEST_MESSAGE_LIMIT) {
+                // `code` lets the client tell "you hit the free limit" apart from a
+                // real failure and render a sign-up path instead of an error state.
                 return new Response(
-                    JSON.stringify({ error: 'Guest message limit reached. Create a free account to continue.' }),
+                    JSON.stringify({
+                        error: "You've used all 15 free messages — create a free account (it takes a few seconds) to keep going right where you left off.",
+                        code: 'guest_limit',
+                    }),
                     { status: 403, headers: { 'Content-Type': 'application/json' } }
                 );
             }

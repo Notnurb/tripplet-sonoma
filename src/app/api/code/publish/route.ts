@@ -74,11 +74,26 @@ function injectMetadata(html: string, metadata: CodePublishMetadata): string {
     return result;
 }
 
+// This GET is unauthenticated by design (published sites are public), but it
+// must only ever hand out what a visitor of a published site is meant to see:
+// the rendered HTML and non-owner metadata. Previously it also returned
+// `ownerUserId` (leaking which internal user account owns every published
+// slug) and, for a single slug, the full `files[]` source array — letting
+// anyone rip the exact source of any published app rather than just view the
+// rendered page, and doing so with zero auth or rate limiting.
+function publicMetadata(metadata: CodePublishMetadata): Omit<CodePublishMetadata, 'ownerUserId'> {
+    const { ownerUserId: _ownerUserId, ...rest } = metadata;
+    void _ownerUserId;
+    return rest;
+}
+
 export async function GET(request: NextRequest) {
     const slug = request.nextUrl.searchParams.get('slug')?.trim();
     if (!slug) {
         const all = await listPublishedSites();
-        return Response.json({ sites: all.map((s) => ({ ...s, html: undefined })) });
+        return Response.json({
+            sites: all.map((s) => ({ metadata: publicMetadata(s.metadata), publishedAt: s.publishedAt })),
+        });
     }
 
     const normalized = normalizeSlug(slug);
@@ -87,7 +102,11 @@ export async function GET(request: NextRequest) {
         return Response.json({ error: 'Published app not found' }, { status: 404 });
     }
 
-    return Response.json(site);
+    return Response.json({
+        metadata: publicMetadata(site.metadata),
+        html: site.html,
+        publishedAt: site.publishedAt,
+    });
 }
 
 export async function POST(request: NextRequest) {

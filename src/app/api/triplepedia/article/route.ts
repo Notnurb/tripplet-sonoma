@@ -1,11 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { isDbConfigured, query } from '@/lib/db/neon';
+import { searchLimiter, LIMITS, rateLimitResponse, getRateLimitToken } from '@/lib/security/rate-limit';
 
 // GET /api/triplepedia/article?slug=...  → full published article + related.
 // Replaces the browser-side Supabase reads on the article page.
 export async function GET(req: NextRequest) {
+    try {
+        await searchLimiter.check(LIMITS.search, getRateLimitToken(req));
+    } catch {
+        return rateLimitResponse();
+    }
+
     if (!isDbConfigured()) {
-        return NextResponse.json({ error: 'Database not configured' }, { status: 503 });
+        return NextResponse.json({ error: 'Triplepedia is temporarily unavailable — please try again soon.' }, { status: 503 });
     }
 
     const slug = req.nextUrl.searchParams.get('slug')?.trim();

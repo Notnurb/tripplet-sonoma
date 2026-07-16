@@ -54,6 +54,10 @@ export interface Message {
     searchResults?: SearchResult[];
     isCollaboration?: boolean;
     codeExecutions?: CodeExecution[];
+    // Set when a guest hits the free-message wall — the bubble renders as a
+    // friendly upgrade prompt (link to create an account) instead of a red
+    // error, so the highest-stakes conversion moment isn't framed as a failure.
+    isGuestLimit?: boolean;
 }
 
 export interface Conversation {

@@ -3,6 +3,9 @@ import { auth } from '@/lib/auth/session';
 import { query, queryOne } from '@/lib/db/neon';
 import { hashPassword, verifyPassword } from '@/lib/auth/password';
 import { profileLimiter, LIMITS, rateLimitResponse, getRateLimitToken } from '@/lib/security/rate-limit';
+import { passwordSchema } from '@/lib/validation';
+import { invalidateSessionsNow } from '@/lib/auth/session-store';
+import { signToken } from '@/lib/auth/jwt';
 
 export const runtime = 'nodejs';
 
@@ -32,15 +35,16 @@ export async function POST(req: NextRequest) {
     if (!currentPassword) {
         return NextResponse.json({ error: 'Current password required' }, { status: 400 });
     }
-    if (newPassword.length < 8) {
-        return NextResponse.json({ error: 'New password must be at least 8 characters' }, { status: 400 });
-    }
-    if (newPassword.length > 256) {
-        return NextResponse.json({ error: 'Password too long' }, { status: 400 });
+    // Same policy as registration (length + common-password blocklist) — a
+    // password *change* must not accept what a sign-up would reject.
+    const parsed = passwordSchema.safeParse(newPassword);
+    if (!parsed.success) {
+        const message = parsed.error.issues[0]?.message ?? 'Invalid password';
+        return NextResponse.json({ error: message }, { status: 400 });
     }
 
-    const user = await queryOne<{ id: string; passwordHash: string | null }>(
-        `SELECT id, "passwordHash" FROM "User" WHERE id = $1 LIMIT 1`,
+    const user = await queryOne<{ id: string; email: string; passwordHash: string | null }>(
+        `SELECT id, email, "passwordHash" FROM "User" WHERE id = $1 LIMIT 1`,
         [userId],
     );
 
@@ -63,5 +67,19 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: 'Failed to update password' }, { status: 500 });
     }
 
-    return NextResponse.json({ ok: true });
+    // Changing a password usually means "I no longer trust who might hold my
+    // credentials" — revoke every already-issued token, then re-issue a fresh
+    // cookie so the user's own session keeps working.
+    await invalidateSessionsNow(userId).catch(() => { /* best-effort */ });
+    const freshToken = await signToken({ userId, email: user.email });
+
+    const response = NextResponse.json({ ok: true });
+    response.cookies.set('auth_token', freshToken, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'strict',
+        maxAge: 60 * 60 * 24 * 7,
+        path: '/',
+    });
+    return response;
 }

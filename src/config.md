@@ -12,7 +12,7 @@ setup TUI: run `./setup.sh` (Git Bash/WSL on Windows) or `npm run setup`.
 
 - name: Tripplet
 - tagline: AI that works the way you think
-- description: Chat, generate images, and build apps — all in one AI platform. Powered by Taipei, Majuli, and Suzhou models.
+- description: Chat, Build and Explore new ideas with Tripplet Sonoma
 - port: 3000
 
 ## Model backends

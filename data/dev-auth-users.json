@@ -19,6 +19,26 @@
       "image": null,
       "createdAt": "2026-05-16T12:37:21.196Z",
       "updatedAt": "2026-05-16T12:37:21.196Z"
+    },
+    {
+      "id": "dev_d15b248b-1d6b-4d5c-a124-1b17590a0130",
+      "email": "local-mrnsmjbx@example.com",
+      "passwordHash": "$2b$12$7hzeXoc78MReDxWmd2O50uUtHQC6uZ02DOuT2VMLdtCt5rhTTlcce",
+      "name": "Local Dev",
+      "bio": null,
+      "image": null,
+      "createdAt": "2026-07-16T17:39:05.472Z",
+      "updatedAt": "2026-07-16T17:39:05.472Z"
+    },
+    {
+      "id": "dev_133db4a9-9293-4bd2-86fc-4d05b8194fee",
+      "email": "local-e2e@example.com",
+      "passwordHash": "$2b$12$0B/UyXnSLgCEUMTp/TvSieE.94oba/jM2N3aM8vun.gj7h3yutlFa",
+      "name": "Local Dev",
+      "bio": null,
+      "image": null,
+      "createdAt": "2026-07-16T17:41:03.514Z",
+      "updatedAt": "2026-07-16T17:41:03.514Z"
     }
   ]
 }

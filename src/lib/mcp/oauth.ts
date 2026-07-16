@@ -17,6 +17,21 @@ export const ACCESS_TOKEN_TTL_SEC = 60 * 60;          // 1 hour
 export const REFRESH_TOKEN_TTL_SEC = 60 * 60 * 24 * 30; // 30 days
 export const AUTH_CODE_TTL_SEC = 60;                   // 1 minute
 export const MCP_SCOPE = 'mcp';
+export const OFFLINE_ACCESS_SCOPE = 'offline_access';
+export const SUPPORTED_SCOPES = new Set([MCP_SCOPE, OFFLINE_ACCESS_SCOPE]);
+
+/** True if every space-delimited scope in `requested` is one this server
+ * actually knows about. Used at authorize-time so a client can't mint a
+ * token carrying an arbitrary scope string that later gets trusted verbatim. */
+export function isValidScope(requested: string): boolean {
+    const scopes = requested.trim().split(/\s+/).filter(Boolean);
+    return scopes.length > 0 && scopes.every((s) => SUPPORTED_SCOPES.has(s));
+}
+
+/** True if `tokenScope` (space-delimited) grants `required`. */
+export function hasScope(tokenScope: string, required: string): boolean {
+    return tokenScope.trim().split(/\s+/).includes(required);
+}
 
 export function sha256(raw: string): string {
     return crypto.createHash('sha256').update(raw).digest('hex');
@@ -165,18 +180,24 @@ export async function issueTokens(input: {
     userEmail: string;
     scope: string;
     resource?: string;
+    /** Root token_hash of this grant's rotation chain. Omit for a brand-new
+     * grant (the new row becomes its own family root); pass the parent row's
+     * family_id when rotating, so reuse detection can revoke the whole chain. */
+    familyId?: string;
 }): Promise<IssuedTokens> {
     const accessToken = randomToken(32);
     const refreshToken = randomToken(32);
+    const tokenHash = sha256(accessToken);
     await query(
         `INSERT INTO oauth_access_tokens
            (token_hash, client_id, user_email, scope, resource, refresh_token_hash,
-            expires_at, refresh_expires_at)
+            expires_at, refresh_expires_at, family_id)
          VALUES ($1, $2, $3, $4, $5, $6,
             now() + ($7 || ' seconds')::interval,
-            now() + ($8 || ' seconds')::interval)`,
+            now() + ($8 || ' seconds')::interval,
+            $9)`,
         [
-            sha256(accessToken),
+            tokenHash,
             input.clientId,
             input.userEmail,
             input.scope,
@@ -184,6 +205,7 @@ export async function issueTokens(input: {
             sha256(refreshToken),
             String(ACCESS_TOKEN_TTL_SEC),
             String(REFRESH_TOKEN_TTL_SEC),
+            input.familyId ?? tokenHash,
         ],
     );
     return {
@@ -195,33 +217,56 @@ export async function issueTokens(input: {
     };
 }
 
-/** Rotate a refresh token: validate it, revoke the old row, issue a new pair. */
+/** Revoke every token in a rotation family — called when a refresh token is
+ * REUSED (presented again after it was already rotated away), the standard
+ * signal that the token was stolen: the legitimate client already rotated
+ * past it, so whoever is presenting it now isn't the legitimate client. */
+async function revokeFamily(familyId: string): Promise<void> {
+    await query(`UPDATE oauth_access_tokens SET is_revoked = true WHERE family_id = $1`, [familyId]);
+}
+
+/** Rotate a refresh token: validate it, revoke the old row, issue a new pair.
+ * Detects reuse of an already-rotated refresh token and revokes the entire
+ * family in response, rather than just rejecting the one replayed request. */
 export async function rotateRefreshToken(
     refreshToken: string,
     clientId: string,
 ): Promise<IssuedTokens | null> {
-    const row = await queryOne<{ user_email: string; scope: string; resource: string | null }>(
-        `SELECT user_email, scope, resource
+    const refreshHash = sha256(refreshToken);
+    const row = await queryOne<{
+        user_email: string; scope: string; resource: string | null;
+        is_revoked: boolean; refresh_expires_at: string; family_id: string | null; token_hash: string;
+    }>(
+        `SELECT user_email, scope, resource, is_revoked, refresh_expires_at, family_id, token_hash
          FROM oauth_access_tokens
          WHERE refresh_token_hash = $1
            AND client_id = $2
-           AND is_revoked = false
-           AND refresh_expires_at > now()
          LIMIT 1`,
-        [sha256(refreshToken), clientId],
+        [refreshHash, clientId],
     );
-    if (!row) return null;
+    if (!row) return null; // unknown token — nothing to rotate or revoke
 
-    // Revoke the old token family, then mint a fresh pair.
+    const familyId = row.family_id ?? row.token_hash;
+
+    if (row.is_revoked) {
+        // Reuse of an already-rotated token: assume compromise, kill the
+        // whole chain so the legitimate holder is forced to re-authenticate.
+        await revokeFamily(familyId);
+        return null;
+    }
+    if (new Date(row.refresh_expires_at) <= new Date()) return null;
+
+    // Revoke this row, then mint a fresh pair carrying the same family_id.
     await query(
         `UPDATE oauth_access_tokens SET is_revoked = true WHERE refresh_token_hash = $1`,
-        [sha256(refreshToken)],
+        [refreshHash],
     );
     return issueTokens({
         clientId,
         userEmail: row.user_email,
         scope: row.scope,
         resource: row.resource ?? undefined,
+        familyId,
     });
 }
 

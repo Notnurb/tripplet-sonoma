@@ -165,7 +165,50 @@ function acquireWorker(): WarmWorker {
     return w;
 }
 
-export function runPython(code: string, stdin?: string): Promise<PythonResult> {
+// Concurrency cap: each worker can hold up to 512MB (maxOldGenerationSizeMb
+// above), so unbounded concurrent runs let one user (or a burst of Sonoma
+// run_python tool calls) exhaust server memory. Extra requests queue rather
+// than fail outright — pure backpressure, no request is rejected, it just
+// waits its turn behind the cap. Tunable via env; serverless deployments with
+// less memory per instance should lower it.
+const MAX_CONCURRENT_RUNS = Math.max(1, Number(process.env.PYTHON_MAX_CONCURRENT ?? '8') || 8);
+let activeRuns = 0;
+const runQueue: Array<() => void> = [];
+
+function acquireRunSlot(): Promise<void> {
+    if (activeRuns < MAX_CONCURRENT_RUNS) {
+        activeRuns++;
+        return Promise.resolve();
+    }
+    return new Promise((resolve) => {
+        runQueue.push(() => {
+            activeRuns++;
+            resolve();
+        });
+    });
+}
+
+function releaseRunSlot(): void {
+    activeRuns--;
+    const next = runQueue.shift();
+    if (next) next();
+}
+
+/** Test/diagnostic hook — current concurrency-cap state. */
+export function pythonConcurrencyStats(): { active: number; queued: number; max: number } {
+    return { active: activeRuns, queued: runQueue.length, max: MAX_CONCURRENT_RUNS };
+}
+
+export async function runPython(code: string, stdin?: string): Promise<PythonResult> {
+    await acquireRunSlot();
+    try {
+        return await runPythonNow(code, stdin);
+    } finally {
+        releaseRunSlot();
+    }
+}
+
+function runPythonNow(code: string, stdin?: string): Promise<PythonResult> {
     return new Promise((resolve) => {
         const { worker, ready } = acquireWorker();
         worker.ref(); // in active use — keep the loop alive until it settles

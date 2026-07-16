@@ -8,6 +8,7 @@ import { loadSettings, SETTINGS_EVENT } from '@/lib/settings';
 import { useChatConversations, useChatActions } from '@/context/ChatContext';
 import { runBash, isVmDownloaded, bootVm } from '@/lib/sandbox/trippletLinux';
 import { readSonomaStream, mergeActivity, finishBashActivity } from '@/lib/sonoma/stream';
+import { takeChatHandoff } from '@/lib/sonoma/handoff';
 import { OUTAGE_ACTIVE } from '@/lib/outage';
 import type { Message } from '@/types';
 import SonomaComposer, { ModelMenu } from './Composer';
@@ -483,6 +484,32 @@ export default function SonomaChatShell({ page = 'chat', conversationId, transpa
         await runAgent(next.slice(0, -1), assistantMessage.id);
     }, [busy, draft, uploaded, messages, model, runAgent, createConversation, page, conversationId, forceEnabled]);
 
+    // Landing-page handoff: a message typed into the composer on `/` arrives
+    // via sessionStorage. Prefill the draft (and any options) on mount, then
+    // send it once React has committed the new draft — handleSend reads state,
+    // so sending in the same tick as setDraft would see the old (empty) value.
+    const [handoffPending, setHandoffPending] = useState(false);
+    useEffect(() => {
+        if (page !== 'chat' || conversationId) return;
+        const handoff = takeChatHandoff();
+        if (!handoff) return;
+        if (handoff.model && pageModels.some((m) => m.id === handoff.model)) {
+            setModel(handoff.model);
+        }
+        if (handoff.browse) setBrowse(true);
+        if (handoff.reason) setReason(true);
+        if (handoff.code) setCodeMode(true);
+        setDraft(handoff.text);
+        setHandoffPending(true);
+        // Mount-only: the handoff is consumed exactly once per shell instance.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+    useEffect(() => {
+        if (!handoffPending || busy || !draft.trim()) return;
+        setHandoffPending(false);
+        void handleSend();
+    }, [handoffPending, busy, draft, handleSend]);
+
     const handleRegenerate = useCallback(() => {
         if ((OUTAGE_ACTIVE && !forceEnabled) || busy) return;
         const lastUserIdx = [...messages].map((m, i) => ({ m, i })).reverse().find((x) => x.m.role === 'user')?.i;
@@ -586,6 +613,7 @@ export default function SonomaChatShell({ page = 'chat', conversationId, transpa
                                             onToggleCode={page === 'code' ? undefined : () => setCodeMode((c) => !c)}
                                             deepCode={deepCode}
                                             onToggleDeepCode={page === 'code' ? () => setDeepCode((d) => !d) : undefined}
+                                            connectors
                                             placeholder={GREETINGS[page].placeholder}
                                         />
                                         </div>
@@ -711,6 +739,7 @@ export default function SonomaChatShell({ page = 'chat', conversationId, transpa
                                 onToggleCode={page === 'code' ? undefined : () => setCodeMode((c) => !c)}
                                 deepCode={deepCode}
                                 onToggleDeepCode={page === 'code' ? () => setDeepCode((d) => !d) : undefined}
+                                connectors
                             />
                             </div>
                             <div

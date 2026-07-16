@@ -1,7 +1,7 @@
 # Prototype surface
 
 This page is one of the experimental/one-off surfaces listed in CLAUDE.md's
-"Application surface" note (alongside `/environment`, `/arena`, `/hivemind`,
+"Application surface" note (alongside `/environment`, `/hivemind`,
 etc.). It is deliberately exempt from the repo's decomposition/coverage bars:
 
 - treat it as a prototype unless a task names it explicitly;

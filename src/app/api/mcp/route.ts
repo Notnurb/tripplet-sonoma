@@ -8,7 +8,7 @@
 // with a single JSON response (no server-initiated SSE stream).
 
 import { NextRequest } from 'next/server';
-import { baseUrlFrom, validateAccessToken } from '@/lib/mcp/oauth';
+import { baseUrlFrom, validateAccessToken, hasScope, MCP_SCOPE } from '@/lib/mcp/oauth';
 import { listToolSpecs, findTool } from '@/lib/mcp/tools';
 import { CORS_HEADERS, preflight } from '@/lib/mcp/http';
 
@@ -65,7 +65,7 @@ export function GET(request: NextRequest) {
 
 async function handleRpc(
     msg: JsonRpcRequest,
-    ctx: { userEmail: string },
+    ctx: { userEmail: string; scope: string },
 ): Promise<object | null> {
     const { method, id } = msg;
 
@@ -96,6 +96,13 @@ async function handleRpc(
             return rpcResult(id, { tools: listToolSpecs() });
 
         case 'tools/call': {
+            // The token's scope is validated at issuance (authorize route) but
+            // was never re-checked here — latent while only one scope exists,
+            // a real gap the day a narrower one is introduced. Check it at the
+            // point of use, not just at mint time.
+            if (!hasScope(ctx.scope, MCP_SCOPE)) {
+                return rpcError(id, -32001, `Insufficient scope: '${MCP_SCOPE}' required.`);
+            }
             const name = msg.params?.name as string | undefined;
             const args = (msg.params?.arguments as Record<string, unknown>) || {};
             const tool = name ? findTool(name) : undefined;
@@ -124,7 +131,7 @@ export async function POST(request: NextRequest) {
     if (!match) return unauthorized(request);
     const token = await validateAccessToken(match[1].trim());
     if (!token) return unauthorized(request);
-    const ctx = { userEmail: token.userEmail };
+    const ctx = { userEmail: token.userEmail, scope: token.scope };
 
     // 2. Parse the JSON-RPC message(s).
     let payload: unknown;

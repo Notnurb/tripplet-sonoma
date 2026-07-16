@@ -35,6 +35,11 @@ const serverSchema = z.object({
     OPENCODE_ZEN_API_BASE_URL: z.string().url().optional(),
     OPENCODE_ZEN_MODEL: z.string().min(1).optional(),
 
+    // ─── Composio (third-party app connectors) ───────────────────────────────
+    // Enables the Connectors feature (settings) and connector tools in the
+    // Sonoma tool loop. Optional — absent means the feature is off.
+    COMPOSIO_API_KEY: z.string().min(1).optional(),
+
     ADMIN_USER_IDS: z.string().optional().default(''),
 
     // ─── x402 Store ──────────────────────────────────────────────────────────

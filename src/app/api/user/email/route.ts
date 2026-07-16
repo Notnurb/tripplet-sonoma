@@ -3,6 +3,8 @@ import { auth } from '@/lib/auth/session';
 import { query, queryOne } from '@/lib/db/neon';
 import { verifyPassword } from '@/lib/auth/password';
 import { profileLimiter, LIMITS, rateLimitResponse, getRateLimitToken } from '@/lib/security/rate-limit';
+import { invalidateSessionsNow } from '@/lib/auth/session-store';
+import { signToken } from '@/lib/auth/jwt';
 
 export const runtime = 'nodejs';
 
@@ -74,5 +76,18 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: 'Failed to update email' }, { status: 500 });
     }
 
-    return NextResponse.json({ ok: true, email });
+    // The JWT embeds the email, so every outstanding token now carries a stale
+    // identity — revoke them all and re-issue a fresh cookie with the new one.
+    await invalidateSessionsNow(userId).catch(() => { /* best-effort */ });
+    const freshToken = await signToken({ userId, email });
+
+    const response = NextResponse.json({ ok: true, email });
+    response.cookies.set('auth_token', freshToken, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'strict',
+        maxAge: 60 * 60 * 24 * 7,
+        path: '/',
+    });
+    return response;
 }
