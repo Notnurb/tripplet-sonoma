@@ -117,7 +117,16 @@ export async function runTool(call: ToolCall): Promise<string> {
                 }));
                 return JSON.stringify({ results });
             } catch (e) {
-                return JSON.stringify({ error: e instanceof Error ? e.message : 'search failed' });
+                // Surface a clear instruction alongside the error. Without this
+                // the model reads a bare status code (e.g. "responded 403") as
+                // transient and burns the whole tool-round budget retrying the
+                // same failing search. The keyless fallback is IP-blocked from
+                // datacenter hosts, so retrying can't help — answer from
+                // knowledge instead.
+                return JSON.stringify({
+                    error: e instanceof Error ? e.message : 'search failed',
+                    note: 'Web search is unavailable right now. Do not retry web_search — answer from your own knowledge and tell the user that live web results could not be retrieved.',
+                });
             }
         }
         case 'fetch_url': {

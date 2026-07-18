@@ -12,10 +12,11 @@ export interface UserMemoryRow {
     updatedAt: string;
 }
 
-// SQL the user can paste into the Neon SQL Editor to create the table (and
-// indices) on a brand-new database. Surfaced in error responses when the table
-// is missing so the user doesn't have to hunt for it.
-export const USER_MEMORY_CREATE_SQL = `-- Run this once in the Neon SQL Editor to enable Memory & Profile.
+// SQL the user can paste into the Neon SQL Editor to create OR repair the
+// table. Surfaced in error responses when the table is missing so the user
+// doesn't have to hunt for it. Safe to re-run. Kept to changes that match
+// prisma/schema.prisma so scripts/check-migration-drift.mjs stays green.
+export const USER_MEMORY_CREATE_SQL = `-- Run this once in the Neon SQL Editor to enable (or repair) Memory & Profile.
 create table if not exists "UserMemory" (
   id          text primary key default gen_random_uuid()::text,
   "userId"    text not null,
@@ -25,6 +26,10 @@ create table if not exists "UserMemory" (
   "createdAt" timestamptz not null default now(),
   "updatedAt" timestamptz not null default now()
 );
+
+-- Repairs a Prisma-created table (Prisma leaves "updatedAt" with no DB
+-- default, which 500s every raw-SQL insert from the deployed app).
+alter table "UserMemory" alter column "updatedAt" set default now();
 
 create index if not exists "UserMemory_userId_idx" on "UserMemory" ("userId");
 create index if not exists "UserMemory_userId_createdAt_idx" on "UserMemory" ("userId", "createdAt" desc);
@@ -102,10 +107,13 @@ export async function createMemory(params: {
     tags: string[];
     source: 'explicit' | 'auto';
 }): Promise<UserMemoryRow> {
+    // createdAt/updatedAt are passed explicitly because the Prisma-created
+    // table has no database-level default for "updatedAt" (@updatedAt is
+    // filled client-side by Prisma, which this raw-SQL path bypasses).
     const rows = await run(() =>
         query<UserMemoryRow>(
-            `INSERT INTO "UserMemory" (id, "userId", content, tags, source)
-             VALUES (gen_random_uuid()::text, $1, $2, $3, $4)
+            `INSERT INTO "UserMemory" (id, "userId", content, tags, source, "createdAt", "updatedAt")
+             VALUES (gen_random_uuid()::text, $1, $2, $3, $4, now(), now())
              RETURNING ${SELECT_COLS}`,
             [params.userId, params.content, params.tags, params.source],
         ),

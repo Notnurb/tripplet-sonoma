@@ -177,7 +177,10 @@ model UserMemory {
   tags      String[]
   source    String   @default("explicit") // "explicit" | "auto"
   createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  // @default(now()) puts a real default on the column: this table is written
+  // via raw SQL (src/lib/db/user-memory.ts), which bypasses Prisma's
+  // client-side @updatedAt fill.
+  updatedAt DateTime @default(now()) @updatedAt
 
   @@index([userId])
   @@index([userId, createdAt])

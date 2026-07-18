@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseDuckDuckGoHtml, decodeResultUrl } from '@/lib/ai/websearch';
+import { parseDuckDuckGoHtml, parseDuckDuckGoLite, decodeResultUrl } from '@/lib/ai/websearch';
 
 // Minimal fixture in the shape html.duckduckgo.com actually serves (verified
 // live 2026-07-06): result__a title anchors with uddg redirect hrefs, each
@@ -37,6 +37,44 @@ describe('parseDuckDuckGoHtml', () => {
     it('returns empty for a challenge/empty page', () => {
         expect(parseDuckDuckGoHtml('', 5)).toEqual([]);
         expect(parseDuckDuckGoHtml('<html><body>anomaly</body></html>', 5)).toEqual([]);
+    });
+});
+
+// Lite markup: <a ... href=".." class='result-link'> (href BEFORE class), with
+// the snippet in a following <td class="result-snippet">.
+const LITE_RESULT = (href: string, title: string, snippet: string) => `
+<tr>
+  <td valign="top">1.&nbsp;</td>
+  <td>
+    <a rel="nofollow" href="${href}" class='result-link'>${title}</a>
+  </td>
+</tr>
+<tr>
+  <td class='result-snippet'>${snippet}</td>
+</tr>`;
+
+const LITE_PAGE =
+    LITE_RESULT('//duckduckgo.com/l/?uddg=https%3A%2F%2Fmodrinth.com%2Fmod%2Ffabric-api&rut=abc', '<b>Fabric</b> API', 'Core library for Fabric mods.') +
+    LITE_RESULT('//duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com%2Fx&rut=def', 'Example', 'A &amp; B.') +
+    // Ad slot / internal link — no uddg target, must be skipped.
+    LITE_RESULT('//duckduckgo.com/y.js?ad_provider=x', 'Sponsored', 'Buy things.');
+
+describe('parseDuckDuckGoLite', () => {
+    it('extracts titles, real URLs, and snippets despite href-before-class order', () => {
+        const r = parseDuckDuckGoLite(LITE_PAGE, 8);
+        expect(r).toHaveLength(2);
+        expect(r[0]).toEqual({
+            title: 'Fabric API',
+            url: 'https://modrinth.com/mod/fabric-api',
+            snippet: 'Core library for Fabric mods.',
+        });
+        expect(r[1].url).toBe('https://example.com/x');
+        expect(r[1].snippet).toBe('A & B.');
+    });
+
+    it('respects maxResults and returns empty for a challenge page', () => {
+        expect(parseDuckDuckGoLite(LITE_PAGE, 1)).toHaveLength(1);
+        expect(parseDuckDuckGoLite('<html><body>anomaly</body></html>', 5)).toEqual([]);
     });
 });
 

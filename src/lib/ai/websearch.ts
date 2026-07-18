@@ -82,23 +82,58 @@ export function decodeResultUrl(href: string): string | null {
 }
 
 async function duckDuckGoSearch(query: string, maxResults: number): Promise<SearchResult[]> {
-    const resp = await fetch(
-        `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`,
-        {
-            headers: {
-                // DDG answers bot-ish UAs with an empty 202 challenge; a plain
-                // browser UA gets the real result page.
-                'User-Agent':
-                    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
-                Accept: 'text/html',
-            },
-            signal: AbortSignal.timeout(10_000),
+    // Keyless, best-effort search. DDG serves two JS-free interfaces and either
+    // can soft-fail — a hard 403 when the caller's IP is blocked (common from
+    // datacenter hosts), or a 202/200 bot-challenge page with no results. Try
+    // both endpoints and only give up if neither yields anything, so one
+    // blocked interface doesn't sink the whole search.
+    const engines: Array<{ url: string; parse: (html: string, n: number) => SearchResult[] }> = [
+        { url: 'https://html.duckduckgo.com/html/', parse: parseDuckDuckGoHtml },
+        { url: 'https://lite.duckduckgo.com/lite/', parse: parseDuckDuckGoLite },
+    ];
+    let lastError: Error | null = null;
+    for (const engine of engines) {
+        try {
+            const results = await ddgFetch(engine.url, query, engine.parse, maxResults);
+            if (results.length > 0) return results;
+            // A 2xx with nothing parseable is the bot-challenge/anomaly page,
+            // not a genuine "no results" — treat it as a soft failure so the
+            // caller sees an error (and the model falls back to its knowledge)
+            // instead of a silently empty result set.
+            lastError = new Error('Search responded with a challenge page (no results)');
+        } catch (e) {
+            lastError = e instanceof Error ? e : new Error('search failed');
+        }
+    }
+    throw lastError ?? new Error('search failed');
+}
+
+async function ddgFetch(
+    endpoint: string,
+    query: string,
+    parse: (html: string, maxResults: number) => SearchResult[],
+    maxResults: number,
+): Promise<SearchResult[]> {
+    const resp = await fetch(endpoint, {
+        // POST with a form body is exactly what the DDG search form submits —
+        // marginally more block-resistant than the equivalent GET query string.
+        method: 'POST',
+        headers: {
+            // DDG answers bot-ish UAs with an empty challenge; a plain browser
+            // UA (plus a normal Accept-Language) gets the real result page.
+            'User-Agent':
+                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+            Accept: 'text/html',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Content-Type': 'application/x-www-form-urlencoded',
         },
-    );
+        body: `q=${encodeURIComponent(query)}`,
+        signal: AbortSignal.timeout(10_000),
+    });
     if (!resp.ok) {
         throw new Error(`Search responded ${resp.status}`);
     }
-    return parseDuckDuckGoHtml(await resp.text(), maxResults);
+    return parse(await resp.text(), maxResults);
 }
 
 // Pure parser over the DDG result page — exported for unit tests.
@@ -116,6 +151,34 @@ export function parseDuckDuckGoHtml(html: string, maxResults: number): SearchRes
         if (!title) continue;
         // Search for the snippet only within the chunk after this anchor
         // (up to a bounded window) so snippets pair with their own result.
+        const tail = html.slice(anchorRe.lastIndex, anchorRe.lastIndex + 3000);
+        const snip = snippetRe.exec(tail);
+        results.push({
+            title,
+            url,
+            snippet: (snip ? stripTags(snip[1]) : '').slice(0, 700),
+        });
+    }
+    return results;
+}
+
+// Pure parser over the DDG *lite* result page — exported for unit tests. Lite
+// markup differs from the html interface: result anchors carry class
+// "result-link" (attribute order varies, so match the tag then pull href out),
+// and each snippet lives in a following <td class="result-snippet">.
+export function parseDuckDuckGoLite(html: string, maxResults: number): SearchResult[] {
+    const results: SearchResult[] = [];
+    const anchorRe = /<a\b([^>]*result-link[^>]*)>([\s\S]*?)<\/a>/gi;
+    const hrefRe = /href=["']([^"']+)["']/i;
+    const snippetRe = /result-snippet[^>]*>([\s\S]*?)<\/td>/i;
+    let m: RegExpExecArray | null;
+    while ((m = anchorRe.exec(html)) !== null && results.length < maxResults) {
+        const href = hrefRe.exec(m[1]);
+        if (!href) continue;
+        const url = decodeResultUrl(href[1]);
+        if (!url) continue; // ads and internal DDG links
+        const title = stripTags(m[2]);
+        if (!title) continue;
         const tail = html.slice(anchorRe.lastIndex, anchorRe.lastIndex + 3000);
         const snip = snippetRe.exec(tail);
         results.push({

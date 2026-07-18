@@ -51,9 +51,15 @@ export async function* streamOnce(
         stream: true,
         temperature,
         messages: history,
-        tools: toolset,
-        tool_choice: 'auto',
     };
+    // Only advertise tools when we actually have some. An empty `tools: []` is
+    // rejected by some OpenAI-compatible backends, and the tool-loop's final
+    // synthesis turn deliberately calls this with no tools to force a text
+    // answer, so that path must send a clean tool-less request.
+    if (toolset.length > 0) {
+        body.tools = toolset;
+        body.tool_choice = 'auto';
+    }
     if (typeof maxTokens === 'number') body.max_tokens = maxTokens;
     // NOTE: `reasoning_effort` is intentionally NOT sent — the current backends
     // don't support it (it's an OpenAI reasoning-model parameter). Equivalent

@@ -21,7 +21,6 @@ import {
     SonomaNewChat,
     SonomaChat,
     SonomaCode,
-    SonomaAgent,
 } from './icons';
 
 function TriplepediaIcon({ size = 18 }: { size?: number }) {
@@ -31,7 +30,6 @@ function TriplepediaIcon({ size = 18 }: { size?: number }) {
 const PAGES = [
     { id: 'chat', label: 'Chat', icon: SonomaChat, href: '/chat' },
     { id: 'code', label: 'Code', icon: SonomaCode, href: '/code' },
-    { id: 'agent', label: 'Agent', icon: SonomaAgent, href: '/hyperagent' },
     { id: 'triplepedia', label: 'Triplepedia', icon: TriplepediaIcon, href: '/triplepedia' },
 ];
 

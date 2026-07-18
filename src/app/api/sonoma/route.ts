@@ -51,7 +51,11 @@ interface RouteBody {
 
 const MAX_MESSAGES = 60;
 const MAX_MESSAGE_CHARS = 32_000;
-const MAX_TOOL_ROUNDS = 4;
+// How many sequential tool-calling turns the model gets before it must answer.
+// Kept modest for latency/cost, but a genuine research task (search + read a
+// few pages) needs more than a couple; once exhausted we still force a final
+// answer rather than dead-ending (see the synthesis turn below).
+const MAX_TOOL_ROUNDS = 6;
 
 export async function POST(req: NextRequest) {
     // Authentication is optional — guests are allowed but get a strict per-IP cap.
@@ -263,10 +267,42 @@ export async function POST(req: NextRequest) {
                     }
                     history.push(...turnToolMessages);
                 }
-                enqueue({
-                    type: 'content',
-                    delta: `\n\n_(Stopped after ${MAX_TOOL_ROUNDS} tool rounds.)_`,
-                });
+
+                // Round budget exhausted while the model was still calling
+                // tools (e.g. a failing web_search it kept retrying). Instead of
+                // dead-ending with no reply, do one final turn with tools
+                // disabled so the model MUST synthesize an answer from whatever
+                // it gathered — the user always gets a real response.
+                const finalSplitter: ThinkSplitter | null =
+                    page === 'code' ? makeThinkSplitter() : null;
+                let answered = false;
+                const emitContent = (delta: string) => {
+                    if (finalSplitter) {
+                        const { thinking, content } = finalSplitter.feed(delta);
+                        if (thinking) enqueue({ type: 'thinking', delta: thinking });
+                        if (content) { answered = true; enqueue({ type: 'content', delta: content }); }
+                    } else {
+                        answered = true;
+                        enqueue({ type: 'content', delta });
+                    }
+                };
+                for await (const ev of streamOnce(history, reason, page, target, [])) {
+                    if (ev.type === 'content') emitContent(ev.delta);
+                    else if (ev.type === 'thinking') enqueue({ type: 'thinking', delta: ev.delta });
+                    // tool_call events can't occur — no tools were offered.
+                }
+                if (finalSplitter) {
+                    const { thinking, content } = finalSplitter.flush();
+                    if (thinking) enqueue({ type: 'thinking', delta: thinking });
+                    if (content) { answered = true; enqueue({ type: 'content', delta: content }); }
+                }
+                if (!answered) {
+                    // Defensive: model returned nothing even without tools.
+                    enqueue({
+                        type: 'content',
+                        delta: `_I wasn't able to finish this with the tools available. Please try rephrasing._`,
+                    });
+                }
                 enqueue({ type: 'done' });
                 controller.close();
             } catch (e) {
