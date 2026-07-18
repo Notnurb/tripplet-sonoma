@@ -101,6 +101,101 @@ fi
 info "Using ${PY} ($("${PY}" -c 'import sys;print("%d.%d.%d"%sys.version_info[:3])'))"
 
 # ---------------------------------------------------------------------------
+# Auto-install the system build tools the agent uses (C/C++ compiler, cmake,
+# make, git). Best-effort and non-interactive — it never fails the install.
+# Opt out with OPENSONOMA_SKIP_SYSTEM_DEPS=1.
+# ---------------------------------------------------------------------------
+detect_pkg_mgr() {
+    case "${UNAME}" in
+        Darwin) command -v brew >/dev/null 2>&1 && echo brew ;;
+        Linux)
+            if   command -v apt-get >/dev/null 2>&1; then echo apt
+            elif command -v dnf     >/dev/null 2>&1; then echo dnf
+            elif command -v pacman  >/dev/null 2>&1; then echo pacman
+            fi ;;
+    esac
+}
+
+have_compiler() {
+    command -v cc  >/dev/null 2>&1 || command -v clang++ >/dev/null 2>&1 \
+        || command -v g++ >/dev/null 2>&1 || command -v gcc >/dev/null 2>&1
+}
+
+map_pkg() { # $1 = manager, $2 = tool  ->  package name (or empty)
+    case "$1" in
+        brew)   case "$2" in compiler) echo llvm ;; cmake) echo cmake ;; make) echo make ;; git) echo git ;; esac ;;
+        apt)    case "$2" in compiler) echo g++ ;; cmake) echo cmake ;; make) echo make ;; git) echo git ;; esac ;;
+        dnf)    case "$2" in compiler) echo gcc-c++ ;; cmake) echo cmake ;; make) echo make ;; git) echo git ;; esac ;;
+        pacman) case "$2" in compiler) echo gcc ;; cmake) echo cmake ;; make) echo make ;; git) echo git ;; esac ;;
+    esac
+}
+
+install_system_deps() {
+    if [ "${OPENSONOMA_SKIP_SYSTEM_DEPS:-0}" = "1" ]; then
+        info "Skipping system dependencies (OPENSONOMA_SKIP_SYSTEM_DEPS=1)."
+        return 0
+    fi
+
+    local missing=""
+    have_compiler                       || missing="${missing} compiler"
+    command -v cmake >/dev/null 2>&1     || missing="${missing} cmake"
+    command -v make  >/dev/null 2>&1     || missing="${missing} make"
+    command -v git   >/dev/null 2>&1     || missing="${missing} git"
+    missing="$(printf '%s' "${missing}" | sed 's/^ *//')"
+
+    if [ -z "${missing}" ]; then
+        info "Build tools present (compiler, cmake, make, git)."
+        return 0
+    fi
+
+    step "Installing missing dependencies: ${missing}"
+
+    if [ "${IS_WINDOWS}" -eq 1 ]; then
+        if command -v winget >/dev/null 2>&1; then
+            for tool in ${missing}; do
+                case "${tool}" in
+                    git)   winget install --silent --accept-source-agreements --accept-package-agreements Git.Git >/dev/null 2>&1 || true ;;
+                    cmake) winget install --silent --accept-source-agreements --accept-package-agreements Kitware.CMake >/dev/null 2>&1 || true ;;
+                esac
+            done
+        fi
+        warn "On Windows, install any remaining tools (${missing}) yourself if you need C/C++ builds."
+        return 0
+    fi
+
+    local mgr; mgr="$(detect_pkg_mgr || true)"
+    if [ -z "${mgr}" ]; then
+        warn "No supported package manager found — install these manually if you need C/C++ builds: ${missing}"
+        return 0
+    fi
+
+    local SUDO=""
+    if [ "$(id -u 2>/dev/null || echo 0)" -ne 0 ] && command -v sudo >/dev/null 2>&1; then
+        SUDO="sudo"
+    fi
+
+    local pkgs=""
+    for tool in ${missing}; do
+        local p; p="$(map_pkg "${mgr}" "${tool}")"
+        [ -n "${p}" ] && pkgs="${pkgs} ${p}"
+    done
+    pkgs="$(printf '%s' "${pkgs}" | sed 's/^ *//')"
+    [ -z "${pkgs}" ] && return 0
+
+    info "Using ${mgr}: ${pkgs}"
+    case "${mgr}" in
+        brew)   brew install ${pkgs} || warn "brew could not install: ${pkgs}" ;;
+        apt)    ${SUDO} apt-get update -y >/dev/null 2>&1 || true
+                ${SUDO} apt-get install -y ${pkgs} || warn "apt could not install: ${pkgs}" ;;
+        dnf)    ${SUDO} dnf install -y ${pkgs} || warn "dnf could not install: ${pkgs}" ;;
+        pacman) ${SUDO} pacman -S --noconfirm ${pkgs} || warn "pacman could not install: ${pkgs}" ;;
+    esac
+    return 0
+}
+
+install_system_deps || true
+
+# ---------------------------------------------------------------------------
 # Fetch the OpenSonoma source (tarball, with a git fallback)
 # ---------------------------------------------------------------------------
 need_cmd() { command -v "$1" >/dev/null 2>&1; }
@@ -145,6 +240,10 @@ if need_cmd pipx; then
     step "Installing with pipx"
     pipx install --force "${SRC_DIR}" >/dev/null
     pipx ensurepath >/dev/null 2>&1 || true
+    # Add the end-to-end encryption dependency (best-effort; base install still
+    # works over the TLS transport if no wheel is available).
+    pipx inject --quiet opensonoma cryptography >/dev/null 2>&1 \
+        || info "Encryption extra unavailable — using the TLS transport only."
     ENTRYPOINT="$(command -v opensonoma 2>/dev/null || true)"
     [ -n "${ENTRYPOINT}" ] || [ ! -x "${HOME_DIR}/.local/bin/opensonoma" ] || ENTRYPOINT="${HOME_DIR}/.local/bin/opensonoma"
 else
@@ -161,7 +260,12 @@ else
 
     step "Installing ${APP_NAME}"
     "${VENV_PY}" -m pip install --quiet --upgrade pip setuptools wheel
-    "${VENV_PY}" -m pip install --quiet "${SRC_DIR}"
+    # Prefer the [e2e] extra (end-to-end encryption); fall back to the base
+    # package if the cryptography wheel can't be installed on this platform.
+    if ! "${VENV_PY}" -m pip install --quiet "${SRC_DIR}[e2e]"; then
+        info "Encryption extra unavailable — installing the base package (TLS transport)."
+        "${VENV_PY}" -m pip install --quiet "${SRC_DIR}"
+    fi
 
     ENTRYPOINT="${VBIN}/opensonoma"
     [ -x "${ENTRYPOINT}" ] || ENTRYPOINT="${VBIN}/opensonoma.exe"

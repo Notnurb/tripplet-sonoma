@@ -317,7 +317,7 @@ class PrereqScreen(Screen):
             yield Static(constants.APP_NAME + " setup", classes="title")
             yield Static(
                 "Detected platform: " + platform_label()
-                + ".  We check for the tools the agent will use.",
+                + ".  Missing tools are installed automatically.",
                 classes="hint",
             )
             table = DataTable(id="prereq_table", zebra_stripes=True)
@@ -335,6 +335,9 @@ class PrereqScreen(Screen):
         table = self.query_one("#prereq_table", DataTable)
         table.add_columns("Tool", "Status", "Where")
         self._refresh_prereqs()
+        # Install anything missing automatically — no click required. Falls back
+        # to the manual button when there's no package manager (or nothing to do).
+        self._maybe_autoinstall()
 
     # -- helpers -----------------------------------------------------------
     def _refresh_prereqs(self) -> None:
@@ -371,6 +374,32 @@ class PrereqScreen(Screen):
 
     def _append_log(self, text: str) -> None:
         self.query_one("#prereq_log", RichLog).write(text)
+
+    def _missing_install_command(self) -> Optional[List[str]]:
+        """Build the package-manager command to install everything missing."""
+        mgr = detect_pkg_manager()
+        if not mgr:
+            return None
+        packages: List[str] = []
+        for r in detect_prereqs():
+            if r["found"]:
+                continue
+            pkg = _PACKAGES.get(mgr, {}).get(str(r["key"]))
+            if pkg and pkg not in packages:
+                packages.append(pkg)
+        if not packages:
+            return None
+        return install_command(mgr, packages)
+
+    def _maybe_autoinstall(self) -> None:
+        """Kick off installation of any missing prerequisites automatically."""
+        command = self._missing_install_command()
+        if not command:
+            return
+        self._append_log("Missing tools detected — installing automatically…")
+        self.query_one("#install", Button).disabled = True
+        self.query_one("#continue", Button).disabled = True
+        self._run_install(command)
 
     def _post_install(self) -> None:
         self._append_log("--- re-checking prerequisites ---")
@@ -410,24 +439,12 @@ class PrereqScreen(Screen):
         if event.button.id == "continue":
             self.action_continue()
         elif event.button.id == "install":
-            mgr = detect_pkg_manager()
-            if not mgr:
+            if not detect_pkg_manager():
                 self._append_log("No supported package manager detected.")
                 return
-            missing_keys = [
-                str(r["key"]) for r in detect_prereqs() if not r["found"]
-            ]
-            packages = []
-            for key in missing_keys:
-                pkg = _PACKAGES.get(mgr, {}).get(key)
-                if pkg and pkg not in packages:
-                    packages.append(pkg)
-            if not packages:
-                self._append_log("Nothing to install.")
-                return
-            command = install_command(mgr, packages)
+            command = self._missing_install_command()
             if not command:
-                self._append_log("Could not build an install command.")
+                self._append_log("Nothing to install.")
                 return
             self.query_one("#install", Button).disabled = True
             self.query_one("#continue", Button).disabled = True

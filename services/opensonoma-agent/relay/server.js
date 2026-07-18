@@ -13,6 +13,7 @@
 // Wire protocol: see opensonoma/protocol.py (this file mirrors those shapes).
 
 import http from 'node:http';
+import https from 'node:https';
 import fs from 'node:fs';
 import { randomUUID, createHmac, timingSafeEqual } from 'node:crypto';
 import { WebSocketServer, WebSocket } from 'ws';
@@ -369,11 +370,15 @@ function broadcastToAccount(accountId, obj) {
 }
 
 function liveMachineView(m) {
+  const sock = deviceSockets.get(m.device_id);
   return {
     device_id: m.device_id,
     machine_name: m.machine_name,
-    status: deviceSockets.has(m.device_id) ? 'online' : m.status,
+    status: sock ? 'online' : m.status,
     last_seen_at: m.last_seen_at,
+    // The device's X25519 public key (base64), if it advertised one. Clients
+    // seal the per-use password to this so the relay never sees plaintext.
+    e2e_pubkey: (sock && sock._e2ePubKey) || m.e2e_pubkey || null,
   };
 }
 
@@ -504,6 +509,10 @@ async function handleDeviceRegister(ws, msg) {
   ws._deviceId = deviceId;
   ws._machineName = msg.machine_name || (row && row.machine_name) || deviceId;
   ws._accountId = (row && row.account_id) || null;
+  // The device's E2E public key (base64), forwarded verbatim to clients so they
+  // can seal the per-use password to it. The relay only routes it; it holds no
+  // private key and cannot decrypt anything sealed with it.
+  ws._e2ePubKey = msg.e2e_pubkey || null;
   ws._lastSeen = Date.now();
   deviceSockets.set(deviceId, ws);
 
@@ -729,6 +738,7 @@ async function onClientPair(ws, msg) {
     device_id: machine.device_id,
     machine_name: machineName,
     online,
+    e2e_pubkey: (deviceWs && deviceWs._e2ePubKey) || null,
   });
   log(`paired device ${machine.device_id} -> account ${ws._accountId}`);
 }
@@ -803,6 +813,8 @@ function forwardToDevice(clientWs, msg, type) {
       auth: msg.auth || { password: msg.password },
       op: msg.op,
     };
+    // Forward the end-to-end sealed password verbatim (opaque to the relay).
+    if (msg.enc) out.enc = msg.enc;
   } else if (type === T_UNLOCK) {
     out = {
       type: T_UNLOCK,
@@ -810,6 +822,7 @@ function forwardToDevice(clientWs, msg, type) {
       session_id: sessionId,
       password: msg.password,
     };
+    if (msg.enc) out.enc = msg.enc;
   } else {
     out = {
       type: T_CANCEL,
@@ -907,8 +920,31 @@ loadEnvFile();
 const PORT = parseInt(process.env.PORT || '8080', 10);
 const SUPABASE_URL = process.env.SUPABASE_URL || '';
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+
+// ---------------------------------------------------------------------------
+// TLS — serve the relay over wss:// directly.
+//
+// TLS_CERT / TLS_KEY may each be either a filesystem path OR an inline PEM
+// string. When both resolve, the relay listens with `https` and the WebSocket
+// endpoint is wss://. When absent, it listens with plain `http`/ws:// — fine
+// behind a TLS-terminating proxy (nginx/Caddy/Cloudflare) or for localhost dev.
+function readTlsMaterial(value) {
+  if (!value) return '';
+  if (value.includes('-----BEGIN')) return value; // inline PEM
+  try {
+    return fs.readFileSync(value, 'utf8');
+  } catch (e) {
+    log(`could not read TLS material at ${value}: ${e.message}`);
+    return '';
+  }
+}
+const TLS_CERT_PEM = readTlsMaterial(process.env.TLS_CERT || '');
+const TLS_KEY_PEM = readTlsMaterial(process.env.TLS_KEY || '');
+const TLS_ENABLED = !!(TLS_CERT_PEM && TLS_KEY_PEM);
+
 const RELAY_PUBLIC_URL =
-  process.env.RELAY_PUBLIC_URL || `ws://localhost:${PORT}/ws`;
+  process.env.RELAY_PUBLIC_URL ||
+  `${TLS_ENABLED ? 'wss' : 'ws'}://localhost:${PORT}/ws`;
 
 // Shared secret with the Tripplet app (its JWT_SECRET). When set, client
 // sessions are authenticated by verifying the app's HS256 session token.
@@ -937,7 +973,7 @@ if (TRIPPLET_JWT_SECRET) {
   );
 }
 
-const server = http.createServer((req, res) => {
+function requestHandler(req, res) {
   if (req.method === 'GET' && (req.url === '/' || req.url === '/health')) {
     res.writeHead(200, { 'content-type': 'application/json' });
     res.end(
@@ -945,6 +981,7 @@ const server = http.createServer((req, res) => {
         ok: true,
         service: 'opensonoma-relay',
         mode: db.mode,
+        secure: TLS_ENABLED,
         devices: deviceSockets.size,
         clients: clientSockets.size,
         public_url: RELAY_PUBLIC_URL,
@@ -954,7 +991,20 @@ const server = http.createServer((req, res) => {
   }
   res.writeHead(404, { 'content-type': 'application/json' });
   res.end(JSON.stringify({ ok: false, error: 'not found' }));
-});
+}
+
+const server = TLS_ENABLED
+  ? https.createServer({ cert: TLS_CERT_PEM, key: TLS_KEY_PEM }, requestHandler)
+  : http.createServer(requestHandler);
+
+if (TLS_ENABLED) {
+  log('TLS enabled — serving the relay over wss://.');
+} else {
+  log(
+    'TLS not configured (serving ws://). Terminate TLS at a proxy, or set ' +
+      'TLS_CERT + TLS_KEY, so production traffic is wss://.',
+  );
+}
 
 const wss = new WebSocketServer({ server, path: '/ws' });
 wss.on('connection', handleConnection);

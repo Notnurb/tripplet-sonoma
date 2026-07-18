@@ -1,8 +1,8 @@
 'use client';
 
-import { useRef, useState, useCallback, type ClipboardEvent, type KeyboardEvent } from 'react';
+import { useRef, useState, useCallback, useEffect, type ClipboardEvent, type KeyboardEvent } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Link2, Check, Loader2, Copy, Terminal } from 'lucide-react';
+import { ArrowLeft, Link2, Check, Loader2, Copy, Terminal, Download } from 'lucide-react';
 
 const CODE_LENGTH = 6; // XXX-XXX, matches the OpenSonoma pairing alphabet
 const INSTALL_CMD = 'curl -fsSL https://tripplet.lol/installconnect | bash';
@@ -21,7 +21,19 @@ export default function ConnectPage() {
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState('');
     const [copied, setCopied] = useState(false);
+    const [showInstall, setShowInstall] = useState(false);
+    const [platform, setPlatform] = useState<'mac' | 'linux' | 'windows' | 'other'>('other');
     const inputsRef = useRef<Array<HTMLInputElement | null>>([]);
+
+    // Detect the OS of the machine being paired so we can show the right
+    // "where to paste this" hint (the install one-liner is the same everywhere).
+    useEffect(() => {
+        const ua = (navigator.userAgent || '').toLowerCase();
+        if (ua.includes('win')) setPlatform('windows');
+        else if (ua.includes('mac')) setPlatform('mac');
+        else if (ua.includes('linux') || ua.includes('android')) setPlatform('linux');
+        else setPlatform('other');
+    }, []);
 
     const copyInstall = useCallback(async () => {
         try {
@@ -236,24 +248,75 @@ export default function ConnectPage() {
                                 <span>Don&apos;t have it yet?</span>
                             </div>
                             <p style={{ fontSize: 12.5, color: MUTED, margin: '0 0 12px', lineHeight: 1.5 }}>
-                                Install OpenSonoma on the computer you want to connect. Paste this into
-                                its terminal — macOS, Linux, or Windows (Git Bash / WSL).
+                                Install OpenSonoma on the computer you want to connect. One command sets
+                                up the <code style={codeTokenStyle}>opensonoma</code> agent and installs
+                                every dependency automatically — Python, a C/C++ compiler, CMake, Make
+                                &amp; Git.
                             </p>
-                            <div style={installCmdRowStyle}>
-                                <code style={installCmdStyle}>{INSTALL_CMD}</code>
-                                <button
-                                    type="button"
-                                    onClick={copyInstall}
-                                    aria-label="Copy install command"
-                                    style={copyBtnStyle}
-                                >
-                                    {copied ? <Check size={15} color="#34d399" /> : <Copy size={15} />}
-                                </button>
-                            </div>
-                            <p style={{ fontSize: 11.5, color: 'var(--sonoma-faint, #6b7280)', margin: '10px 0 0' }}>
-                                It sets up the <code style={codeTokenStyle}>opensonoma</code> command, then
-                                shows a code + emoji to enter here.
-                            </p>
+
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    void copyInstall();
+                                    setShowInstall(true);
+                                }}
+                                style={installBtnStyle}
+                                onMouseEnter={(e) => {
+                                    e.currentTarget.style.background = 'rgba(255,255,255,0.14)';
+                                }}
+                                onMouseLeave={(e) => {
+                                    e.currentTarget.style.background = 'rgba(255,255,255,0.08)';
+                                }}
+                            >
+                                <Download size={16} />
+                                {copied
+                                    ? 'Command copied — paste it in your terminal'
+                                    : 'Install OpenSonoma & dependencies'}
+                            </button>
+
+                            {showInstall && (
+                                <div style={{ marginTop: 12 }}>
+                                    <p style={installStepStyle}>
+                                        {platform === 'windows' ? (
+                                            <>
+                                                On Windows, open <b style={{ color: INK }}>Git Bash</b> or{' '}
+                                                <b style={{ color: INK }}>WSL</b>, then paste:
+                                            </>
+                                        ) : (
+                                            <>
+                                                Open your <b style={{ color: INK }}>Terminal</b>
+                                                {platform === 'mac' ? ' (⌘-Space → “Terminal”)' : ''} and
+                                                paste:
+                                            </>
+                                        )}
+                                    </p>
+                                    <div style={installCmdRowStyle}>
+                                        <code style={installCmdStyle}>{INSTALL_CMD}</code>
+                                        <button
+                                            type="button"
+                                            onClick={copyInstall}
+                                            aria-label="Copy install command"
+                                            style={copyBtnStyle}
+                                        >
+                                            {copied ? (
+                                                <Check size={15} color="#34d399" />
+                                            ) : (
+                                                <Copy size={15} />
+                                            )}
+                                        </button>
+                                    </div>
+                                    <p
+                                        style={{
+                                            fontSize: 11.5,
+                                            color: 'var(--sonoma-faint, #6b7280)',
+                                            margin: '10px 0 0',
+                                        }}
+                                    >
+                                        Installing the build tools may prompt for your password. When it
+                                        finishes it prints a code + emoji — enter them above.
+                                    </p>
+                                </div>
+                            )}
                         </div>
                     </>
                 )}
@@ -420,6 +483,30 @@ const installHeaderStyle: React.CSSProperties = {
     fontWeight: 600,
     color: INK,
     margin: '0 0 8px',
+};
+
+const installBtnStyle: React.CSSProperties = {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    width: '100%',
+    padding: '11px 16px',
+    borderRadius: 10,
+    border: '1px solid rgba(255,255,255,0.18)',
+    background: 'rgba(255,255,255,0.08)',
+    color: INK,
+    fontSize: 13.5,
+    fontWeight: 600,
+    cursor: 'pointer',
+    transition: 'background 120ms',
+};
+
+const installStepStyle: React.CSSProperties = {
+    fontSize: 12.5,
+    color: MUTED,
+    margin: '0 0 8px',
+    lineHeight: 1.5,
 };
 
 const installCmdRowStyle: React.CSSProperties = {

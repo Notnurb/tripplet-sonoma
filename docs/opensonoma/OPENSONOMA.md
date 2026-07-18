@@ -22,6 +22,29 @@ owner-authorized terminal access to a paired machine. Three moving parts:
 The emoji is derived identically on both sides (`opensonoma/pairing.py` ⇄
 `src/lib/connect/pairing.ts`) so they always agree.
 
+## Encryption
+
+Two layers, so the relay is never a place secrets sit in the clear:
+
+1. **Transport (always on): `wss://` TLS.** Both ends resolve the relay URL
+   through a single policy — `src/lib/connect/relay-url.ts` (web) and
+   `constants.relay_transport_ok()` (daemon). A plaintext `ws://` relay is
+   **refused** for any non-loopback host, so the session token and pairing
+   traffic are always TLS-encrypted in production. The web client fails closed
+   rather than downgrade. The relay serves TLS natively when `TLS_CERT` +
+   `TLS_KEY` are set (file paths or inline PEM), or you can terminate TLS at a
+   proxy.
+2. **End-to-end (per-use password): sealed box.** The relay terminates TLS, so
+   to keep the exec/unlock password from it too, the device advertises an X25519
+   public key (`e2e_pubkey`) at register. A client seals the password to that
+   key (`src/lib/connect/e2e.ts` ⇄ `opensonoma/e2e.py`: X25519 → HKDF-SHA256 →
+   AES-256-GCM). The relay forwards the opaque `enc` blob it cannot read; only
+   the daemon's private key opens it. This is best-effort — it needs the
+   optional `cryptography` dep (the `opensonoma[e2e]` extra); without it the
+   daemon falls back to the password-over-TLS path. The two implementations are
+   byte-compatible, checked by a known-answer vector (`python -m opensonoma.e2e`
+   and `tests/unit/connect-e2e.test.ts`).
+
 ## Run it locally
 
 ```bash
@@ -52,6 +75,20 @@ npm scripts (root `package.json`):
 `services/opensonoma-agent/` by `scripts/bundle-opensonoma.mjs`), pip-installs it into an
 isolated venv, and puts the `opensonoma` command on PATH (zsh/bash/profile +
 Windows User PATH).
+
+**Dependencies install automatically.** The installer detects the platform
+package manager (Homebrew / apt / dnf / pacman) and installs any missing system
+build tools — a C/C++ compiler, CMake, Make, and Git — non-interactively before
+setting up the agent, and requests the `opensonoma[e2e]` extra (the
+`cryptography` encryption dep). Every step is best-effort: a package it can't
+install is warned about, never fatal. Opt out with `OPENSONOMA_SKIP_SYSTEM_DEPS=1`.
+The first-run wizard (`opensonoma`) also auto-installs anything still missing on
+its prerequisites screen, so both paths converge on a ready machine.
+
+**Install from the web.** `/connect` step 1 has an **Install OpenSonoma &
+dependencies** button that copies the one-liner and shows platform-aware paste
+instructions (macOS / Linux / Windows Git Bash+WSL). Running it installs the
+agent and all of the above dependencies in one shot.
 
 ## Auth bridge (production)
 

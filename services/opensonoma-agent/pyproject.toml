@@ -44,6 +44,15 @@ dependencies = [
     "websockets>=12",
 ]
 
+[project.optional-dependencies]
+# End-to-end encryption of the per-use password (X25519 + AES-256-GCM). The
+# installer requests this extra so `opensonoma[e2e]` is the default install; if
+# no wheel is available for the platform, the install falls back to the base
+# package and the daemon still runs over the TLS relay transport.
+e2e = [
+    "cryptography>=41",
+]
+
 [project.scripts]
 opensonoma = "opensonoma.cli:main"
 

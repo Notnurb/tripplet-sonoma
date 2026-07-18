@@ -19,7 +19,10 @@ Roles
 device -> relay
 ----------------------------------------------------------------------------
   register      {type, role:"device", device_id, device_token, machine_name,
-                 pairing_code, password_hash, version}
+                 pairing_code, password_hash, version, e2e_pubkey?}
+                 e2e_pubkey is a raw 32-byte X25519 public key (base64). When
+                 present, a client MAY seal the per-use password to it so the
+                 relay never sees plaintext (see opensonoma/e2e.py).
   heartbeat     {type}
   op_started    {type, id, session_id, kind, command, started_at}
   stream        {type, id, session_id, stream:"stdout"|"stderr", seq, data}
@@ -32,10 +35,15 @@ device -> relay
 relay -> device
 ----------------------------------------------------------------------------
   register_ack  {type, ok, account_id, paired}
-  exec          {type, id, session_id, auth:{password}, op:{kind, ...}}
-  unlock        {type, id, session_id, password}
+  exec          {type, id, session_id, auth:{password}, op:{kind, ...}, enc?}
+  unlock        {type, id, session_id, password, enc?}
   cancel        {type, id, session_id, target_id}
   paired        {type, account_id, machine_name}
+
+  `enc` (optional) is a sealed box {v, epk, iv, ct, tag} carrying the per-use
+  password, encrypted end-to-end to the device's e2e_pubkey. When present the
+  device decrypts it and ignores the plaintext `password`/`auth.password`. The
+  relay forwards `enc` verbatim and cannot read it.
 
 ----------------------------------------------------------------------------
 client -> relay
@@ -120,8 +128,8 @@ def now_ms() -> int:
 
 # -- builders (device side) -------------------------------------------------
 def register_msg(device_id, device_token, machine_name, pairing_code,
-                 password_hash, version):
-    return {
+                 password_hash, version, e2e_pubkey=None):
+    msg = {
         "type": T_REGISTER,
         "role": ROLE_DEVICE,
         "device_id": device_id,
@@ -131,6 +139,11 @@ def register_msg(device_id, device_token, machine_name, pairing_code,
         "password_hash": password_hash,
         "version": version,
     }
+    if e2e_pubkey:
+        # Advertise the device's X25519 public key so clients can seal the
+        # per-use password end-to-end (the relay never sees it).
+        msg["e2e_pubkey"] = e2e_pubkey
+    return msg
 
 
 def heartbeat_msg():

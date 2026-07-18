@@ -41,6 +41,47 @@ DEFAULT_RELAY_URL = os.environ.get(
     "OPENSONOMA_RELAY_URL", "wss://relay.tripplet.ai/ws"
 )
 
+# Loopback hosts where a plaintext ws:// relay is acceptable (local dev only).
+_LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "0.0.0.0", "::1"}
+
+
+def _hostname(url: str) -> str:
+    try:
+        from urllib.parse import urlparse
+
+        host = urlparse(url).hostname or ""
+    except Exception:  # noqa: BLE001
+        return ""
+    return host.lower()
+
+
+def is_loopback_relay(url: str) -> bool:
+    """True when *url*'s host is loopback (ws:// is acceptable there)."""
+    host = _hostname(url)
+    if host in _LOOPBACK_HOSTS:
+        return True
+    if host == "localhost" or host.endswith(".localhost"):
+        return True
+    if host.startswith("127."):
+        return True
+    return False
+
+
+def relay_is_secure(url: str) -> bool:
+    """True when the relay URL uses an encrypted transport (wss://)."""
+    return url.lower().startswith("wss://")
+
+
+def relay_transport_ok(url: str) -> bool:
+    """Mirror the web client's policy: wss:// anywhere, ws:// only to loopback.
+
+    A False result means the relay would send device credentials over an
+    unencrypted link to a remote host. The daemon warns (rather than refusing)
+    so an operator who terminates TLS elsewhere can still opt in, but the
+    default managed relay is wss:// and satisfies this.
+    """
+    return relay_is_secure(url) or is_loopback_relay(url)
+
 # ---------------------------------------------------------------------------
 # Behaviour tuning
 # ---------------------------------------------------------------------------

@@ -1,23 +1,27 @@
-// Thin client for the OpenSonoma relay (~/OS/relay/server.js).
+// Thin client for the OpenSonoma relay (services/opensonoma-agent/relay/server.js).
 //
 // The relay is a WebSocket forwarder between Sonoma sessions (role "client")
 // and paired machines (role "device"). To pair, we connect as a client,
 // `register`, then send a `pair` frame with the code and await `pair_result`.
-// The wire protocol is defined in ~/OS/opensonoma/protocol.py.
+// The wire protocol is defined in opensonoma/protocol.py.
 //
-// Node (v20.10+, and the v26 runtime here) ships a global WHATWG `WebSocket`,
+// Node (v20.10+, and the v24 runtime here) ships a global WHATWG `WebSocket`,
 // so no extra dependency is needed.
 //
-// AUTH NOTE: in the relay's in-memory dev mode the `account_id` is trusted
-// directly (JWTs are not verified) — perfect for local dev with the daemon +
-// relay running. In Supabase mode the relay verifies `auth_jwt` as a Supabase
-// token; this app's session JWT is not a Supabase JWT, so production wiring
-// would need a Supabase token minted for the user. That's intentionally out of
-// scope here — the pairing UX and protocol are what's being delivered.
+// TRANSPORT ENCRYPTION: the relay URL is resolved through `resolveRelayUrl`,
+// which refuses a plaintext ws:// endpoint on any non-loopback host — so the
+// session token and pairing traffic are always TLS-encrypted (wss://) in
+// production. See src/lib/connect/relay-url.ts.
+//
+// AUTH: `/api/connect/verify` forwards the user's real Tripplet session JWT as
+// `auth_jwt`. When the relay is configured with `TRIPPLET_JWT_SECRET` (= the
+// app's JWT_SECRET) it verifies that token (HS256) and binds only the caller's
+// own devices. With neither that secret nor Supabase configured, the relay runs
+// in dev-trust memory mode (local pairing only).
 
 import { randomUUID } from 'crypto';
+import { resolveRelayUrl } from './relay-url';
 
-const RELAY_URL = process.env.OPENSONOMA_RELAY_URL || 'ws://localhost:8080/ws';
 const PAIR_TIMEOUT_MS = 10_000;
 
 export interface PairResult {
@@ -46,9 +50,22 @@ export function relayPair(opts: {
     machineName?: string;
 }): Promise<PairResult> {
     return new Promise((resolve) => {
+        let relayUrl: string;
+        try {
+            relayUrl = resolveRelayUrl().url;
+        } catch (err) {
+            // Misconfiguration (e.g. a plaintext ws:// relay in production) —
+            // fail closed rather than send the session token in the clear.
+            resolve({
+                ok: false,
+                error: err instanceof Error ? err.message : 'The relay is not configured correctly.',
+            });
+            return;
+        }
+
         let ws: WebSocket;
         try {
-            ws = new WebSocket(RELAY_URL);
+            ws = new WebSocket(relayUrl);
         } catch {
             resolve({ ok: false, error: 'Could not reach the Tripplet relay.' });
             return;

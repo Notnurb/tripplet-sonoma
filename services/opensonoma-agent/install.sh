@@ -106,6 +106,76 @@ PY_VER="$("${PY}" -c 'import sys; print("%d.%d.%d" % sys.version_info[:3])')"
 info "Using ${PY} (Python ${PY_VER})"
 
 # ---------------------------------------------------------------------------
+# Auto-install system build tools (compiler, cmake, make, git). Best-effort and
+# non-interactive; never fails the install. Opt out: OPENSONOMA_SKIP_SYSTEM_DEPS=1.
+# ---------------------------------------------------------------------------
+detect_pkg_mgr() {
+    case "$(uname -s)" in
+        Darwin) command -v brew >/dev/null 2>&1 && echo brew ;;
+        Linux)
+            if   command -v apt-get >/dev/null 2>&1; then echo apt
+            elif command -v dnf     >/dev/null 2>&1; then echo dnf
+            elif command -v pacman  >/dev/null 2>&1; then echo pacman
+            fi ;;
+    esac
+}
+have_compiler() {
+    command -v cc  >/dev/null 2>&1 || command -v clang++ >/dev/null 2>&1 \
+        || command -v g++ >/dev/null 2>&1 || command -v gcc >/dev/null 2>&1
+}
+map_pkg() {
+    case "$1" in
+        brew)   case "$2" in compiler) echo llvm ;; cmake) echo cmake ;; make) echo make ;; git) echo git ;; esac ;;
+        apt)    case "$2" in compiler) echo g++ ;; cmake) echo cmake ;; make) echo make ;; git) echo git ;; esac ;;
+        dnf)    case "$2" in compiler) echo gcc-c++ ;; cmake) echo cmake ;; make) echo make ;; git) echo git ;; esac ;;
+        pacman) case "$2" in compiler) echo gcc ;; cmake) echo cmake ;; make) echo make ;; git) echo git ;; esac ;;
+    esac
+}
+install_system_deps() {
+    if [ "${OPENSONOMA_SKIP_SYSTEM_DEPS:-0}" = "1" ]; then
+        info "Skipping system dependencies (OPENSONOMA_SKIP_SYSTEM_DEPS=1)."
+        return 0
+    fi
+    local missing=""
+    have_compiler                   || missing="${missing} compiler"
+    command -v cmake >/dev/null 2>&1 || missing="${missing} cmake"
+    command -v make  >/dev/null 2>&1 || missing="${missing} make"
+    command -v git   >/dev/null 2>&1 || missing="${missing} git"
+    missing="$(printf '%s' "${missing}" | sed 's/^ *//')"
+    if [ -z "${missing}" ]; then
+        info "Build tools present (compiler, cmake, make, git)."
+        return 0
+    fi
+    step "Installing missing dependencies: ${missing}"
+    local mgr; mgr="$(detect_pkg_mgr || true)"
+    if [ -z "${mgr}" ]; then
+        warn "No supported package manager found — install manually if you need C/C++ builds: ${missing}"
+        return 0
+    fi
+    local SUDO=""
+    if [ "$(id -u 2>/dev/null || echo 0)" -ne 0 ] && command -v sudo >/dev/null 2>&1; then
+        SUDO="sudo"
+    fi
+    local pkgs=""
+    for tool in ${missing}; do
+        local p; p="$(map_pkg "${mgr}" "${tool}")"
+        [ -n "${p}" ] && pkgs="${pkgs} ${p}"
+    done
+    pkgs="$(printf '%s' "${pkgs}" | sed 's/^ *//')"
+    [ -z "${pkgs}" ] && return 0
+    info "Using ${mgr}: ${pkgs}"
+    case "${mgr}" in
+        brew)   brew install ${pkgs} || warn "brew could not install: ${pkgs}" ;;
+        apt)    ${SUDO} apt-get update -y >/dev/null 2>&1 || true
+                ${SUDO} apt-get install -y ${pkgs} || warn "apt could not install: ${pkgs}" ;;
+        dnf)    ${SUDO} dnf install -y ${pkgs} || warn "dnf could not install: ${pkgs}" ;;
+        pacman) ${SUDO} pacman -S --noconfirm ${pkgs} || warn "pacman could not install: ${pkgs}" ;;
+    esac
+    return 0
+}
+install_system_deps || true
+
+# ---------------------------------------------------------------------------
 # Install: prefer pipx if available, otherwise a dedicated venv
 # ---------------------------------------------------------------------------
 ENTRYPOINT=""   # absolute path to the installed `opensonoma` executable
@@ -115,6 +185,9 @@ if command -v pipx >/dev/null 2>&1; then
     pipx install --force "${PROJECT_DIR}"
     # Make sure pipx's bin dir is wired onto PATH for future shells.
     pipx ensurepath >/dev/null 2>&1 || true
+    # End-to-end encryption dependency (best-effort).
+    pipx inject --quiet opensonoma cryptography >/dev/null 2>&1 \
+        || info "Encryption extra unavailable — using the TLS transport only."
     ENTRYPOINT="$(command -v opensonoma 2>/dev/null || true)"
     if [ -z "${ENTRYPOINT}" ]; then
         # pipx default bin location.
@@ -140,7 +213,11 @@ else
     "${VENV_PY}" -m pip install --quiet --upgrade pip setuptools wheel
 
     step "Installing ${APP_NAME} (pip install .)"
-    "${VENV_PY}" -m pip install --quiet "${PROJECT_DIR}"
+    # Prefer the [e2e] extra (end-to-end encryption); fall back to base package.
+    if ! "${VENV_PY}" -m pip install --quiet "${PROJECT_DIR}[e2e]"; then
+        info "Encryption extra unavailable — installing the base package (TLS transport)."
+        "${VENV_PY}" -m pip install --quiet "${PROJECT_DIR}"
+    fi
 
     ENTRYPOINT="${VENV_DIR}/bin/opensonoma"
     [ -x "${ENTRYPOINT}" ] || die "Install finished but ${ENTRYPOINT} is missing."

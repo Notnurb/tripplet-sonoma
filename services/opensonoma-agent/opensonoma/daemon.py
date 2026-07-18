@@ -212,6 +212,13 @@ class Daemon:
         self.link_state = "connecting"
         self._write_status_now()
 
+        if not constants.relay_transport_ok(url):
+            self._log(
+                "WARNING: relay {} is not encrypted (ws:// to a non-loopback "
+                "host). Device credentials would travel in the clear. Use a "
+                "wss:// relay.".format(url)
+            )
+
         ssl_ctx = None
         if url.lower().startswith("wss://"):
             ssl_ctx = ssl.create_default_context()
@@ -264,12 +271,16 @@ class Daemon:
 
     async def _register(self, ws) -> None:
         had_token = bool(self.secret.device_token)
+        had_e2e = bool(self.secret.e2e_privkey)
         token = self.secret.ensure_device_token()
-        if not had_token:
+        # Advertise the device's E2E public key (empty string when the optional
+        # `cryptography` dep is absent — the daemon still works over TLS).
+        e2e_pubkey = self.secret.ensure_e2e_key()
+        if not had_token or (not had_e2e and self.secret.e2e_privkey):
             try:
                 self.secret.save()
             except OSError as exc:
-                self._log("could not persist device token: {!r}".format(exc))
+                self._log("could not persist device secret: {!r}".format(exc))
         msg = protocol.register_msg(
             self.config.device_id,
             token,
@@ -277,9 +288,34 @@ class Daemon:
             self.config.pairing_code,
             self.secret.password_hash,
             constants.VERSION,
+            e2e_pubkey=e2e_pubkey,
         )
         await self._send(ws, msg)
-        self._log("sent register for device {}".format(self.config.device_id))
+        self._log(
+            "sent register for device {} (e2e {})".format(
+                self.config.device_id, "on" if e2e_pubkey else "off"
+            )
+        )
+
+    def _recover_password(self, msg: dict) -> str:
+        """Return the per-use password from a message.
+
+        Prefers an end-to-end sealed box (``enc``) so the relay never saw the
+        plaintext; falls back to the plaintext field (still TLS-encrypted on the
+        wire) when E2E is not in use or decryption fails.
+        """
+        enc = msg.get("enc")
+        if enc and self.secret.e2e_privkey:
+            try:
+                from . import e2e
+
+                return e2e.open_box(self.secret.e2e_privkey, enc).decode(
+                    "utf-8", "replace"
+                )
+            except Exception as exc:  # noqa: BLE001 - fall back, never crash
+                self._log("could not open sealed auth: {!r}".format(exc))
+        auth = msg.get("auth") or {}
+        return auth.get("password", "") or msg.get("password", "") or ""
 
     async def _heartbeat_loop(self, ws) -> None:
         try:
@@ -361,7 +397,7 @@ class Daemon:
     async def _on_unlock(self, ws, msg: dict) -> None:
         req_id = msg.get("id")
         session_id = msg.get("session_id")
-        password = msg.get("password", "") or ""
+        password = self._recover_password(msg)
         if self.secret.verify(password):
             expires_at = _iso_after(constants.UNLOCK_TTL_SECONDS)
             await self._send(
@@ -389,8 +425,7 @@ class Daemon:
     async def _on_exec(self, ws, msg: dict) -> None:
         op_id = msg.get("id")
         session_id = msg.get("session_id")
-        auth = msg.get("auth") or {}
-        password = auth.get("password", "") or ""
+        password = self._recover_password(msg)
         op = msg.get("op") or {}
 
         if not self.secret.verify(password):

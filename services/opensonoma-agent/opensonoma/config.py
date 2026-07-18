@@ -90,6 +90,9 @@ class Secret:
 
     password_hash: str = ""
     device_token: str = ""
+    # Raw 32-byte X25519 private key (base64) for end-to-end decryption of the
+    # per-use password. Empty when the optional `cryptography` dep is absent.
+    e2e_privkey: str = ""
 
     @classmethod
     def exists(cls) -> bool:
@@ -121,6 +124,25 @@ class Secret:
         if not self.device_token:
             self.device_token = crypto.new_device_token()
         return self.device_token
+
+    def ensure_e2e_key(self) -> str:
+        """Ensure an X25519 keypair exists; return the base64 public key.
+
+        Returns "" when end-to-end encryption is unavailable (the optional
+        `cryptography` dependency is not installed). Never raises — E2E is a
+        best-effort hardening on top of the always-on TLS transport.
+        """
+        from . import e2e  # lazy: keeps config importable without cryptography
+
+        if not e2e.HAVE_E2E:
+            return ""
+        try:
+            if not self.e2e_privkey:
+                priv_b64, _pub_b64 = e2e.generate_keypair()
+                self.e2e_privkey = priv_b64
+            return e2e.public_for(self.e2e_privkey)
+        except Exception:  # noqa: BLE001 - never let key setup break registration
+            return ""
 
 
 def is_first_run() -> bool:
