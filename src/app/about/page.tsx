@@ -43,7 +43,7 @@ const values = [
 
 const pillars = [
     { value: '4', label: 'AI models', note: 'Astro · Taipei · Majuli · Suzhou' },
-    { value: '2025', label: 'Founded', note: 'From Minecraft host to AI platform' },
+    { value: '2024', label: 'Founded', note: '2 years of trust' },
     { value: 'MCP', label: 'Connectable', note: 'Plug Tripplet into other AI tools' },
     { value: 'Free', label: 'To start', note: 'No account or credit card required' },
 ];

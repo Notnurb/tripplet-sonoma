@@ -17,7 +17,7 @@
 // isDevModeActive() is false unless NODE_ENV === 'development', so pushing
 // this file with the flag on can never open a login bypass (or a source-
 // writing endpoint) on Vercel or any other production build.
-export const DEV_MODE_ACTIVE = true;
+export const DEV_MODE_ACTIVE = false;
 
 // The account you are signed in as while the bypass is on. The id is a stable
 // primary key: src/lib/auth/dev-user.ts upserts this row so conversations,
