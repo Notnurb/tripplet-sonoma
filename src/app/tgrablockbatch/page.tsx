@@ -395,7 +395,7 @@ export default function BatchGrabberPage() {
 
     const addUrlsToSlots = useCallback((urls: string[], mode: FinderSubmitMode) => {
         if (urls.length === 0) return;
-        let queued: Array<{ id: string; url: string }> = [];
+        const queued: Array<{ id: string; url: string }> = [];
 
         setSlots(prev => {
             const existing = new Set(prev.map(s => s.url.trim()).filter(Boolean));
@@ -403,7 +403,7 @@ export default function BatchGrabberPage() {
             if (uniqueUrls.length === 0) return prev;
 
             const next = [...prev];
-            let remaining = [...uniqueUrls];
+            const remaining = [...uniqueUrls];
 
             for (let i = 0; i < next.length && remaining.length > 0; i += 1) {
                 const slot = next[i];

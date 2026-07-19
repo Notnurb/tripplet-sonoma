@@ -200,7 +200,7 @@ async function generateCode(params: {
     const { provider, apiKey, codeModel, filePath, description, existingContent, generationContext } = params;
     const messages: ChatMessage[] = [{ role: 'system', content: CODE_MODEL_SYSTEM_PROMPT }];
 
-    let userMsg = [
+    const userMsg = [
         `Generate the complete contents for: ${filePath}`,
         '',
         `Description: ${description || 'Implement based on request context.'}`,

@@ -440,7 +440,7 @@ export function TemplatesTab({ env, onAddFile }: {
     const [preview, setPreview] = useState<string | null>(null);
     const [used, setUsed] = useState<Set<string>>(new Set());
 
-    const useTemplate = (t: Template) => {
+    const applyTemplate = (t: Template) => {
         t.files.forEach(f => onAddFile({
             name: f.name, content: f.content,
             size: f.content.length, type: 'text/plain',
@@ -488,7 +488,7 @@ export function TemplatesTab({ env, onAddFile }: {
                                                 </button>
                                             )}
                                             <button
-                                                onClick={() => useTemplate(t)}
+                                                onClick={() => applyTemplate(t)}
                                                 disabled={isUsed || alreadyHasFile}
                                                 className={cn(
                                                     'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors',
