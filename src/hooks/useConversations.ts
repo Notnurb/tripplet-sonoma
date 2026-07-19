@@ -7,6 +7,17 @@ import { useAuth } from '@/context/AuthContext';
 
 const STORAGE_KEY = 'tripplet_conversations';
 
+// Cheap content signature so the cloud-sync effect only pushes conversations
+// that actually changed (title, model, or any message's content).
+function syncSigOf(c: Conversation): string {
+    let hash = 0;
+    for (const m of c.messages) {
+        const s = `${m.id}:${m.role}:${m.content}`;
+        for (let i = 0; i < s.length; i++) hash = (hash * 31 + s.charCodeAt(i)) | 0;
+    }
+    return `${c.title}|${c.model}|${c.messages.length}|${hash}`;
+}
+
 /**
  * Conversation domain: the list of conversations, which one is active, history
  * loading (API for signed-in users, localStorage for guests), and CRUD. This is
@@ -30,6 +41,11 @@ export function useConversations() {
     // re-subscribing to state.
     const conversationsRef = useRef<Conversation[]>([]);
     const activeConversationIdRef = useRef<string | null>(null);
+
+    // id → signature of the copy the cloud already has. Seeded from the server
+    // load so boot doesn't re-upload everything; guest conversations recovered
+    // from localStorage are absent from the seed and migrate up automatically.
+    const lastSyncedRef = useRef<Map<string, string>>(new Map());
 
     useEffect(() => {
         conversationsRef.current = conversations;
@@ -89,6 +105,8 @@ export function useConversations() {
                                 model: m.model || c.model // Fallback
                             }))
                         })) as Conversation[];
+
+                        formatted.forEach((c) => lastSyncedRef.current.set(c.id, syncSigOf(c)));
 
                         setConversations((prev) => {
                             const merged = [...formatted];
@@ -155,6 +173,60 @@ export function useConversations() {
             return () => clearTimeout(timeout);
         }
     }, [conversations, historyLoaded, isSignedIn, isAuthLoaded]);
+
+    // Cloud sync for signed-in users: debounce, diff against what the server
+    // already has, and push only the changed conversations (encrypted at rest
+    // server-side). Fire-and-forget — a failed push retries on the next change
+    // because the signature map is only updated after a 2xx.
+    useEffect(() => {
+        if (!isAuthLoaded || !isSignedIn || !historyLoaded) return;
+        const timeout = setTimeout(async () => {
+            const changed = conversationsRef.current.filter(
+                (c) => c.messages.length > 0 && lastSyncedRef.current.get(c.id) !== syncSigOf(c),
+            );
+            // Oldest-first so a mid-batch failure never leaves newer state
+            // synced ahead of older state; cap batches to the API's limit.
+            for (let i = 0; i < changed.length; i += 10) {
+                const batch = changed.slice(i, i + 10);
+                try {
+                    const res = await fetch('/api/chat/sync', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            conversations: batch.map((c) => ({
+                                id: c.id,
+                                title: c.title,
+                                model: c.model,
+                                createdAt: c.createdAt,
+                                messages: c.messages.slice(-400).map((m) => ({
+                                    id: m.id,
+                                    role: m.role === 'user' ? 'user' : 'assistant',
+                                    content: m.content.slice(0, 200_000),
+                                    timestamp: m.timestamp,
+                                    model: m.model,
+                                    attachments: m.attachments,
+                                    codeExecutions: m.codeExecutions,
+                                })),
+                            })),
+                        }),
+                    });
+                    if (res.ok) {
+                        const { synced } = await res.json();
+                        batch.forEach((c) => {
+                            if (Array.isArray(synced) && synced.includes(c.id)) {
+                                lastSyncedRef.current.set(c.id, syncSigOf(c));
+                            }
+                        });
+                    } else {
+                        break; // rate-limited or server trouble — retry on next change
+                    }
+                } catch {
+                    break; // offline — localStorage/state still has everything
+                }
+            }
+        }, 1500);
+        return () => clearTimeout(timeout);
+    }, [conversations, historyLoaded, isSignedIn, isAuthLoaded, conversationsRef]);
 
     const activeConversation = useMemo(
         () => conversations.find((c) => c.id === activeConversationId),
@@ -238,8 +310,16 @@ export function useConversations() {
                 setActiveConversationId(null);
                 activeConversationIdRef.current = null;
             }
+            lastSyncedRef.current.delete(id);
+            if (isSignedIn) {
+                fetch('/api/chat/sync', {
+                    method: 'DELETE',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id }),
+                }).catch(() => { /* cloud copy lingers; local removal already done */ });
+            }
         },
-        []
+        [isSignedIn]
     );
 
     const renameConversation = useCallback((id: string, newTitle: string) => {

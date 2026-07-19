@@ -18,6 +18,7 @@ import { getFeedbackSignals } from '@/lib/ai/feedback-signals';
 import { LRUCache } from 'lru-cache';
 import { chatLimiter, LIMITS, rateLimitResponse, getRateLimitToken } from '@/lib/security/rate-limit';
 import { serializeMessageMetadata } from '@/lib/chat/message-metadata';
+import { encryptText } from '@/lib/chat/crypto';
 import { parseBody, chatSchema } from '@/lib/validation';
 // The tool schemas, run_code execution streamer, memory block/mirroring, and
 // web-search injection live in src/lib/chat/* — this file holds request flow.
@@ -144,7 +145,7 @@ export async function POST(request: NextRequest) {
                         [
                             conversationId,
                             userId,
-                            messages?.[messages.length - 1]?.content.slice(0, 30) || 'New Chat',
+                            encryptText(messages?.[messages.length - 1]?.content.slice(0, 30) || 'New Chat'),
                             model || 'tura-3',
                         ],
                     );
@@ -159,7 +160,7 @@ export async function POST(request: NextRequest) {
                     await tx.query(
                         `INSERT INTO "Message" (id, "conversationId", role, content, tone, "extendedThink", "createdAt")
                          VALUES (gen_random_uuid()::text, $1, 'user', $2, $3, $4, now())`,
-                        [conversationId, lastUserMsg.content, activeTone || tone, extendedThinking || false],
+                        [conversationId, encryptText(lastUserMsg.content), activeTone || tone, extendedThinking || false],
                     );
                 }
             });
@@ -560,7 +561,7 @@ Rules:
                                  VALUES (gen_random_uuid()::text, $1, 'assistant', $2, $3::jsonb, now())`,
                                 [
                                     conversationId,
-                                    fullResponse,
+                                    encryptText(fullResponse),
                                     serializeMessageMetadata({ codeExecutions }),
                                 ],
                             ).catch((error) => {

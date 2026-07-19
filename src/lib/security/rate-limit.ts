@@ -310,6 +310,7 @@ export const oauthRegisterLimiter = rateLimit({ name: 'oauth-register', interval
 // where every allowed request is either settling money or burning credits.
 export const x402BuyLimiter = rateLimit({ name: 'x402-buy', interval: 60 * 60 * 1000, uniqueTokenPerInterval: 10000 });
 export const x402ChatLimiter = rateLimit({ name: 'x402-chat', interval: 60 * 60 * 1000, uniqueTokenPerInterval: 10000 });
+export const syncLimiter = rateLimit({ name: 'sync', interval: 60 * 60 * 1000, uniqueTokenPerInterval: 10000 });
 
 // Limits per hour per token (user ID or IP).
 // Set conservatively — these are real guard rails, not rubber stamps.
@@ -330,6 +331,7 @@ export const LIMITS = {
     upload: 30,         // 30 image uploads/hr — independent of the search budget
     engagement: 20,     // 20 reactions/views per article per hour per token — keeps counts honest
     connector: 120,     // 120 connector ops/hr — the chat composer menu lists on every open, plus connect/disconnect
+    sync: 360,          // 360 conversation syncs/hr — debounced client pushes, one per pause in typing
 };
 
 /** Returns a 429 response with standard headers. */

@@ -148,5 +148,38 @@ export const chatTitleSchema = z.object({
     conversationId: z.string().uuid().optional(),
 });
 
+// ─── Conversation cloud sync (Sonoma chat) ────────────────────────────────────
+
+const syncMessageSchema = z.object({
+    id: z.string().min(1).max(64).regex(/^[\w.-]+$/, 'Invalid message id').optional(),
+    role: z.enum(['user', 'assistant']),
+    content: z.string().max(200_000),
+    timestamp: z.union([z.string(), z.number(), z.date()]).optional(),
+    model: z.string().max(64).optional(),
+    // Display metadata (file chips, sandbox run badges) — re-validated by
+    // parseMessageMetadata on read, so structurally loose here.
+    attachments: z.array(z.unknown()).max(20).optional(),
+    codeExecutions: z.array(z.unknown()).max(50).optional(),
+});
+
+export const conversationSyncSchema = z.object({
+    conversations: z
+        .array(
+            z.object({
+                id: z.string().uuid('Conversation id must be a UUID'),
+                title: z.string().max(200).optional(),
+                model: z.string().max(64).optional(),
+                createdAt: z.union([z.string(), z.number(), z.date()]).optional(),
+                messages: z.array(syncMessageSchema).min(1).max(400),
+            }),
+        )
+        .min(1)
+        .max(10),
+});
+
+export const conversationDeleteSchema = z.object({
+    id: z.string().uuid('Conversation id must be a UUID'),
+});
+
 // Re-export ZodError for convenience
 export { ZodError };

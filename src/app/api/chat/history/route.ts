@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { query } from "@/lib/db/neon";
 import { auth } from "@/lib/auth/session";
 import { parseMessageMetadata } from '@/lib/chat/message-metadata';
+import { decryptText } from '@/lib/chat/crypto';
 
 export const dynamic = 'force-dynamic';
 
@@ -43,10 +44,12 @@ export async function GET(req: NextRequest) {
 
         const formatted = conversations?.map((c: any) => ({
             ...c,
+            title: decryptText(c.title) || 'New Chat',
             messages: Array.isArray(c.messages)
                 ? c.messages.sort((a: any, b: any) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
                     .map((m: any) => ({
                         ...m,
+                        content: decryptText(m.content),
                         ...parseMessageMetadata(m.attachments),
                         timestamp: m.createdAt,
                         model: c.model,

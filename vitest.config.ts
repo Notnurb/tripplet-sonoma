@@ -6,7 +6,6 @@ export default defineConfig({
     // transpile JSX itself for component tests that import .tsx source. This
     // build of Vitest uses the oxc transformer, so only the oxc key is set
     // (setting esbuild too just warns that it's ignored).
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ...({ oxc: { jsx: { runtime: 'automatic' } } } as any),
     resolve: {
         // Mirror the Next.js "@/..." path alias so unit tests import source
