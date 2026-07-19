@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+# Toggle dev-mode by editing the flag it lives in: src/lib/dev-mode.ts
+# (login bypass as Tripplet Dev + the "q" dev panel — see that file).
+#
+#   ./dev on      set DEV_MODE_ACTIVE = true
+#   ./dev off     set DEV_MODE_ACTIVE = false
+#   ./dev         show the current state
+#
+# A running `npm run dev` hot-reloads the change; no restart needed. Dev-mode
+# only ever activates on the dev server (NODE_ENV=development), so committing
+# the flag as true is safe for deploys.
+set -euo pipefail
+
+cd "$(dirname "$0")"
+file="src/lib/dev-mode.ts"
+
+if [ ! -f "$file" ]; then
+    echo "error: $file not found" >&2
+    exit 1
+fi
+
+current=""
+if grep -q '^export const DEV_MODE_ACTIVE = true;$' "$file"; then
+    current=true
+elif grep -q '^export const DEV_MODE_ACTIVE = false;$' "$file"; then
+    current=false
+else
+    echo "error: couldn't find the DEV_MODE_ACTIVE line in $file — edit it by hand" >&2
+    exit 1
+fi
+
+case "${1-}" in
+    on)  target=true ;;
+    off) target=false ;;
+    ''|status)
+        state=off; [ "$current" = true ] && state=on
+        echo "dev-mode is $state  (DEV_MODE_ACTIVE = $current in $file)"
+        echo "usage: ./dev on | ./dev off"
+        exit 0
+        ;;
+    *)
+        echo "usage: ./dev on | ./dev off | ./dev" >&2
+        exit 1
+        ;;
+esac
+
+if [ "$current" = "$target" ]; then
+    echo "dev-mode already $1 (DEV_MODE_ACTIVE = $current)"
+    exit 0
+fi
+
+# Portable in-place edit (GNU/BSD sed and Git Bash all handle this).
+sed "s/^export const DEV_MODE_ACTIVE = ${current};$/export const DEV_MODE_ACTIVE = ${target};/" "$file" > "$file.tmp"
+mv "$file.tmp" "$file"
+
+echo "dev-mode $1 (DEV_MODE_ACTIVE = $target in $file)"
+if [ "$target" = true ]; then
+    echo "Running dev server hot-reloads it — press q on any page for the panel."
+fi

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { jwtVerify } from 'jose'
+import { isDevModeActive } from '@/lib/dev-mode'
 
 const CSP = [
     "default-src 'self'",
@@ -83,7 +84,10 @@ export async function middleware(request: NextRequest) {
         return NextResponse.redirect(url)
     }
 
-    if (!isAuthed && !isPublicPath) {
+    // Dev-mode login bypass (src/lib/dev-mode.ts, dev server only): private
+    // pages render as the Tripplet Dev account instead of bouncing to /login.
+    // /login itself stays reachable so real accounts can still be tested.
+    if (!isAuthed && !isPublicPath && !isDevModeActive()) {
         const url = request.nextUrl.clone()
         url.pathname = '/login'
         return NextResponse.redirect(url)

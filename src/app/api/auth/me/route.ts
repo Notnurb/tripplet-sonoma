@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { findAuthUserById } from "@/lib/auth/user-store";
 import { verifyToken } from "@/lib/auth/jwt";
 import { logAuthFailure } from "@/lib/auth/log";
+import { DEV_USER, isDevModeActive } from "@/lib/dev-mode";
 
 export const dynamic = 'force-dynamic';
 
@@ -40,6 +41,18 @@ export async function GET(req: NextRequest) {
             } catch {
                 // Invalid/expired token — treat as signed-out.
             }
+        }
+
+        // Dev-mode login bypass (dev server only): with no real session, the
+        // client hydrates as the Tripplet Dev account instead of signed-out.
+        if (isDevModeActive()) {
+            return ok({
+                id: DEV_USER.id,
+                name: DEV_USER.name,
+                email: DEV_USER.email,
+                bio: null,
+                image: null,
+            });
         }
 
         return NextResponse.json({ user: null }, { status: 200 });

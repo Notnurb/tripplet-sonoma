@@ -19,6 +19,14 @@ type Post = {
 
 const posts: Post[] = [
     {
+        slug: 'why-we-stopped-open-sourcing-our-models',
+        title: 'Why we stopped open-sourcing our models',
+        excerpt: 'Why we stopped open sourcing Tripplets Models, possibly creating a extreme effect to Tripplets Reputation',
+        date: 'July 18, 2026',
+        category: 'Product',
+        readTime: '2 min read',
+    },
+    {
         slug: 'march-2026-stability',
         title: 'How We Made Tripplet More Stable in March',
         excerpt: 'We quietly shipped a round of stability and security improvements to Tripplet\'s auth system this week. Password reset tokens, rate limiting, and error handling all got tightened up. Here\'s what we changed and why it matters.',
@@ -89,9 +97,9 @@ export default function Blog() {
                             initial={{ opacity: 0, y: 20, filter: 'blur(10px)' }}
                             animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
                             transition={{ duration: 0.7, delay: 0.1, ease }}
-                            className="gradient-text text-4xl font-bold tracking-tight md:text-5xl"
+                            className="text-4xl font-bold tracking-tight md:text-5xl"
                         >
-                            Blog
+                            <span className="gradient-text">Blog</span>
                         </motion.h1>
                         <motion.p
                             initial={{ opacity: 0, y: 16, filter: 'blur(6px)' }}

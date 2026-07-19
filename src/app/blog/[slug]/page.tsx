@@ -23,6 +23,30 @@ type PostContent = {
 
 const POSTS: PostContent[] = [
     {
+        slug: 'why-we-stopped-open-sourcing-our-models',
+        title: 'Why we stopped open-sourcing our models',
+        excerpt: 'Why we stopped open sourcing Tripplets Models, possibly creating a extreme effect to Tripplets Reputation',
+        date: 'July 18, 2026',
+        category: 'Product',
+        readTime: '2 min read',
+        sections: [
+            {
+                paragraphs: [
+                    '# Why Tripplet Stopped Open-Sourcing New Models',
+                    'For a while, every model we shipped went straight to Hugging Face. That\'s not the case anymore, and we want to be upfront about why, instead of just quietly letting it fade.',
+                    '**The old models are still there.** Taipei 3.1, Majuli 3.1, Suzhou 3.1, and Synthara 1 remain fully open on Hugging Face under Notnurb. Nothing has been taken down, nothing is getting relicensed retroactively. If you built on them, you can keep building on them.',
+                    '**But going forward, our models aren\'t being open-sourced.** A few honest reasons:',
+                    '1. **The merge recipes are the actual product.** Tripplet\'s models aren\'t trained from scratch — they\'re mergekit merges of open-weight bases, tuned through a lot of trial and error to get the right blend of behavior, tone, and performance. Publishing the final weights makes that work trivially copyable. Someone can pull the weights, skip years of iteration, and relaunch as a competitor overnight. Early on that felt fine, but at Tripplet\'s current stage, it isn\'t.',
+                    '2. **Open weights don\'t actually help the mission right now.** The original thinking was "open models = trust + community goodwill." In practice, most of the goodwill came from the product being usable and fast, not from the license on the weights. Almost nobody was fine-tuning or redistributing Taipei/Majuli/Suzhou in ways that mattered, but plenty of people were re-uploading them as their own "new" models. That\'s not community; that\'s just getting stripped for parts.',
+                    '3. **The website and infra staying OSS is the actual differentiator we want.** Anyone can inspect, fork, or self-host the Tripplet frontend and backend. That\'s where we think openness earns trust: you can verify how your data is handled, how requests are routed, what\'s actually happening client-side. The model weights are a separate question from "can you trust the platform," and we\'re treating them separately now.',
+                    '4. **Regulation-proofing cuts both ways.** Being self-hosted and merge-based instead of dependent on a single frontier lab\'s API is a real advantage: nobody can revoke your access to weights you already have. But that same architecture is also what makes the models themselves worth protecting; they\'re not a commodity wrapper around someone else\'s API, they\'re the thing we\'ve actually built.',
+                    'So: infra stays open, because that\'s where trust matters. New models stay closed, because that\'s where the actual work is. And the old models stay up on Hugging Face because taking them down would just be petty — they did their job, and if they\'re still useful to someone, that\'s a fine legacy to leave.',
+                    'If you disagree with this tradeoff, that\'s fair — it\'s a real tradeoff, not a strictly correct answer.',
+                ],
+            },
+        ],
+    },
+    {
         slug: 'march-2026-stability',
         title: 'How We Made Tripplet More Stable in March',
         excerpt: 'Password reset tokens, rate limiting, and error handling — what we tightened up and why.',

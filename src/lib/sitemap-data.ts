@@ -68,6 +68,7 @@ export const SITEMAP_SECTIONS: SitemapSection[] = [
         title: 'Blog',
         entries: [
             { path: '/blog', changeFrequency: 'weekly', priority: 0.8 },
+            { path: '/blog/why-we-stopped-open-sourcing-our-models', changeFrequency: 'monthly', priority: 0.6 },
             { path: '/blog/march-2026-stability', changeFrequency: 'monthly', priority: 0.6 },
             { path: '/blog/introducing-v3-1-models', changeFrequency: 'monthly', priority: 0.6 },
             { path: '/blog/building-the-code-workspace', changeFrequency: 'monthly', priority: 0.6 },

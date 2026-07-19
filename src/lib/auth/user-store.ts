@@ -2,6 +2,7 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import prisma from '@/lib/db/prisma';
+import { DEV_USER, isDevModeActive } from '@/lib/dev-mode';
 
 export interface AuthUserRecord {
     id: string;
@@ -91,6 +92,19 @@ export async function findAuthUserByEmail(email: string): Promise<AuthUserRecord
 }
 
 export async function findAuthUserById(id: string): Promise<AuthUserRecord | null> {
+    // Dev-mode login bypass: the Tripplet Dev identity resolves without any
+    // store so profile/session lookups work even before the row is upserted
+    // (and when DATABASE_URL is absent entirely). Dev server only.
+    if (isDevModeActive() && id === DEV_USER.id) {
+        return {
+            id: DEV_USER.id,
+            email: DEV_USER.email,
+            passwordHash: null,
+            name: DEV_USER.name,
+            bio: null,
+            image: null,
+        };
+    }
     return withDatabaseFallback<AuthUserRecord | null>(
         async () =>
             prisma.user.findUnique({
