@@ -15,6 +15,20 @@ type ChangelogEntry = {
 
 const changelog: ChangelogEntry[] = [
     {
+        version: '3.3 Horizon',
+        date: 'July 18, 2026',
+        title: 'A New Front Door & Connected Apps',
+        changes: [
+            { type: 'added', text: 'Redesigned landing page — glass navigation, video backdrop, and a live composer so you can start chatting before you even sign in.' },
+            { type: 'added', text: 'Connectors — link GitHub, Gmail, Notion, and more from the Apps menu, and Sonoma gets tools for your connected apps automatically.' },
+            { type: 'added', text: 'OpenSonoma relay — connect your own machine to Tripplet with end-to-end encryption enforced and a one-click web install button.' },
+            { type: 'added', text: 'Triplepedia is now public — browse the knowledge base without an account.' },
+            { type: 'improved', text: 'Web search, memory, and Sonoma upstream connections hardened against malformed responses and bad actors.' },
+            { type: 'improved', text: 'Full multi-format sitemaps so search engines can actually find all of Tripplet.' },
+            { type: 'fixed', text: 'Suggested prompt chips removed from the chat empty state — the input box is all yours again.' },
+        ],
+    },
+    {
         version: '3.2 Stability',
         date: 'March 24, 2026',
         title: 'Rock-Solid Auth & Site Stability',
