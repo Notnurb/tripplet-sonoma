@@ -245,7 +245,7 @@ function InputBox({
             if (draft) { setContent(draft); setHadDraft(true); }
         } catch { /* private browsing */ }
         setPlaceholders(getPlaceholders());
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
     }, []);
 
     useEffect(() => {

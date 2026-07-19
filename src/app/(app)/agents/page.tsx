@@ -271,7 +271,7 @@ export default function AgentsPage() {
             autoIntervals: autoIntervals.current,
         });
         return true;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
     }, [sessions, groups, activeModes, streamAgentMessage, updateSession]);
 
     // Push a simple info message (displayed as a system-style assistant bubble)

@@ -39,7 +39,7 @@ export function ActivityToast() {
     useEffect(() => {
         const t = setTimeout(show, 12000 + Math.random() * 8000);
         return () => clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
     }, []);
 
     useEffect(() => {

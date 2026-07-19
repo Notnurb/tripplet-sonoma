@@ -321,7 +321,7 @@ export function ConsoleTab({ env, onAddFile, onRemoveFile, onSyncFiles }: {
             setLines([]);
             return [];
         },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
     }), [REMOTE_COMMANDS, env.files, env.slug, env.storageLimitMb, envVars, history, onAddFile, onRemoveFile]);
 
     const runRemote = useCallback(async (command: string) => {

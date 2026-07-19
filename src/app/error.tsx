@@ -17,7 +17,7 @@ export default function GlobalError({
         <html>
             <body className="min-h-screen bg-gradient-to-br from-background to-background/80 flex items-center justify-center p-4">
                 <div className="flex flex-col items-center gap-6 p-8 text-center max-w-sm">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    { }
                     <img
                         src="/trilo-jaw.png"
                         alt="Trilo shocked"

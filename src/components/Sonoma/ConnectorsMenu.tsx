@@ -396,7 +396,7 @@ export default function ConnectorsMenu({ compact }: { compact?: boolean }) {
                                                     style={{ padding: '6px 8px' }}
                                                 >
                                                     {app.logo ? (
-                                                        // eslint-disable-next-line @next/next/no-img-element -- remote CDN logos, tiny, unknown domains
+                                                         
                                                         <img
                                                             src={app.logo}
                                                             alt=""

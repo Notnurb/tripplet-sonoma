@@ -242,7 +242,7 @@ function Attachments({
                     }}
                 >
                     {f.preview ? (
-                        // eslint-disable-next-line @next/next/no-img-element
+                         
                         <img
                             src={f.preview}
                             alt=""

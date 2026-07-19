@@ -320,7 +320,7 @@ export default function ConnectorsPanel() {
                                             className="flex items-start gap-2.5 rounded-lg border border-border bg-background px-3 py-2.5"
                                         >
                                             {app.logo ? (
-                                                // eslint-disable-next-line @next/next/no-img-element -- remote CDN logos, tiny, unknown domains
+                                                 
                                                 <img
                                                     src={app.logo}
                                                     alt=""

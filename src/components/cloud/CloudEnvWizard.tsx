@@ -176,7 +176,7 @@ function ConfigStep({ config, onChange }: { config: ConfigState; onChange: (patc
                         className="flex items-center justify-center w-16 h-16 rounded-2xl border-2 border-dashed border-border hover:border-foreground/30 transition-colors group relative overflow-hidden"
                     >
                         {config.photoPreview ? (
-                            // eslint-disable-next-line @next/next/no-img-element
+                             
                             <img src={config.photoPreview} alt="env icon" className="w-full h-full object-cover" />
                         ) : (
                             <Cloud className="h-7 w-7 text-muted-foreground/40 group-hover:text-muted-foreground/60 transition-colors" />
@@ -332,7 +332,7 @@ function DoneStep({ env, onOpen }: { env: CloudEnvironment; onOpen: () => void }
                 className="flex items-center justify-center w-20 h-20 rounded-3xl bg-emerald-500/10 border border-emerald-500/20"
             >
                 {env.photoUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element
+                     
                     <img src={env.photoUrl} alt={env.name} className="w-16 h-16 rounded-2xl object-cover" />
                 ) : (
                     <Cloud className="h-9 w-9 text-emerald-500" />

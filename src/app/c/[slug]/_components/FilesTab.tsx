@@ -45,7 +45,7 @@ export function FilesTab({ env, onAddFile, onRemoveFile }: {
             const latest = env.files.find(f => f.name === selected.name);
             if (latest) { setSelected(latest); setEditContent(latest.content); setDirty(false); }
         }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
     }, [env.files]);
 
     const tree = useMemo(() => buildFileTree(env.files), [env.files]);
@@ -304,7 +304,7 @@ export function FilesTab({ env, onAddFile, onRemoveFile }: {
                         </div>
                         {selected.content.startsWith('data:image/') ? (
                             <div className="flex-1 flex items-center justify-center bg-background p-4">
-                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                { }
                                 <img src={selected.content} alt={selected.name} className="max-w-full max-h-[400px] rounded-lg border border-border" />
                             </div>
                         ) : (

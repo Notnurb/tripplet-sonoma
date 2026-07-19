@@ -505,7 +505,7 @@ export default function ArticlePage() {
                                 {/* Infobox image — Wikipedia style */}
                                 {imageEntry && (
                                     <div className="border-b border-border bg-muted/10">
-                                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                                        { }
                                         <img
                                             src={imageEntry.value as string}
                                             alt={captionEntry?.value as string || article!.title}

@@ -344,7 +344,7 @@ export default function TriplepediaGrabberPage() {
                                 </label>
                                 {displayImage ? (
                                     <div className="rounded-xl border border-border overflow-hidden">
-                                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                                        { }
                                         <img src={displayImage} alt={title} className="w-full max-h-56 object-contain bg-muted/20" />
                                         <div className="px-3 py-2.5 border-t border-border flex items-center gap-2">
                                             <input

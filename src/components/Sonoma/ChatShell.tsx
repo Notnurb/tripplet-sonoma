@@ -502,7 +502,7 @@ export default function SonomaChatShell({ page = 'chat', conversationId, transpa
         setDraft(handoff.text);
         setHandoffPending(true);
         // Mount-only: the handoff is consumed exactly once per shell instance.
-        // eslint-disable-next-line react-hooks/exhaustive-deps
+         
     }, []);
     useEffect(() => {
         if (!handoffPending || busy || !draft.trim()) return;

@@ -278,7 +278,7 @@ export function ArticleChatPanel({ article, open, onClose, ask }: ArticleChatPan
                 textareaRef.current?.focus();
             });
         }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
+         
     }, [ask]);
 
     const stop = () => {

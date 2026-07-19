@@ -116,7 +116,7 @@ async function fetchExtracts(titles: string[]): Promise<TurboArticle[]> {
     const res = await fetch(url);
     if (!res.ok) throw new Error(`Wikipedia extract API failed`);
     const data = await res.json();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const pages: Record<string, any> = data?.query?.pages ?? {};
     const articles: TurboArticle[] = [];
     for (const p of Object.values(pages)) {

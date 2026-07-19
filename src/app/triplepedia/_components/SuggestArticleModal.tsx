@@ -330,7 +330,7 @@ export default function SuggestArticleModal({ open, onClose, onSubmitted }: Prop
                                             /* Preview card */
                                             <div className="rounded-xl border border-border bg-muted/20 overflow-hidden">
                                                 <div className="relative">
-                                                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                                                    { }
                                                     <img
                                                         src={imagePreview}
                                                         alt="Preview"

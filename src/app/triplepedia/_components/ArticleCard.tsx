@@ -51,7 +51,7 @@ export default function ArticleCard({ article, index = 0 }: ArticleCardProps) {
                 {/* Thumbnail */}
                 {imageUrl && (
                     <div className="relative h-36 overflow-hidden bg-muted/20">
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        { }
                         <img
                             src={imageUrl}
                             alt={article.title}
