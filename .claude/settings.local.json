@@ -12,5 +12,10 @@
     ]
   },
   "spinnerTipsEnabled": false,
-  "prefersReducedMotion": false
+  "prefersReducedMotion": false,
+  "permissions": {
+    "allow": [
+      "Bash(npm run *)"
+    ]
+  }
 }
