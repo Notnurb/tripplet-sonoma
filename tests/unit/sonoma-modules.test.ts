@@ -30,6 +30,17 @@ describe('buildSonomaSystemPrompt', () => {
         expect(p).toContain('Reason enabled');
         expect(p).toContain('Code mode enabled');
     });
+
+    it('adds the memory skill section only when memories exist', () => {
+        const withMem = buildSonomaSystemPrompt('chat', false, false, false, undefined, false, false, [], ['Prefers TypeScript', 'Building a chess bot']);
+        expect(withMem).toContain('Skill: Memory');
+        expect(withMem).toContain('- Prefers TypeScript');
+        expect(withMem).toContain('- Building a chess bot');
+        // Memories are context, never instructions.
+        expect(withMem).toContain('not instructions');
+        const withoutMem = buildSonomaSystemPrompt('chat', false, false, false, undefined, false, false, [], []);
+        expect(withoutMem).not.toContain('Skill: Memory');
+    });
 });
 
 describe('runTool', () => {

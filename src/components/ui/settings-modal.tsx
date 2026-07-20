@@ -106,6 +106,7 @@ function GeneralSection() {
     const [autoSkills, setAutoSkills] = useState<AutoSkillSetting>(s.autoSkills ?? 'off');
     const [legacyModels, setLegacyModels] = useState(s.legacyModels ?? false);
     const [sandboxedLinux, setSandboxedLinux] = useState(s.sandboxedLinux ?? true);
+    const [memorySkill, setMemorySkill] = useState(s.memorySkill ?? true);
     const [vmDownloaded, setVmDownloaded] = useState(false);
     const [vmDownloading, setVmDownloading] = useState(false);
     useEffect(() => { setVmDownloaded(isVmDownloaded()); }, []);
@@ -127,7 +128,7 @@ function GeneralSection() {
         }
     };
 
-    const set = <K extends 'sendOnEnter' | 'autoTitle' | 'showTimestamps' | 'soundEffects' | 'legacyModels' | 'sandboxedLinux'>(
+    const set = <K extends 'sendOnEnter' | 'autoTitle' | 'showTimestamps' | 'soundEffects' | 'legacyModels' | 'sandboxedLinux' | 'memorySkill'>(
         key: K, val: boolean, setState: (v: boolean) => void
     ) => {
         setState(val);
@@ -184,6 +185,9 @@ function GeneralSection() {
                 <Toggle checked={legacyModels} onChange={(v) => set('legacyModels', v, setLegacyModels)} />
             </SettingRow>
             <SectionDivider label="Skills" />
+            <SettingRow label="Memory" description="Tripplet learns about you as you chat — it remembers your preferences, projects, and expertise automatically and personalizes future answers. Signed-in accounts only.">
+                <Toggle checked={memorySkill} onChange={(v) => set('memorySkill', v, setMemorySkill)} />
+            </SettingRow>
             <SettingRow label="Tripplet Sandboxed Linux" description="Let the assistant run bash in a real Linux VM that runs entirely in your browser (the run_bash skill).">
                 <Toggle checked={sandboxedLinux} onChange={(v) => set('sandboxedLinux', v, setSandboxedLinux)} />
             </SettingRow>

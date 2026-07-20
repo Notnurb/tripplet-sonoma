@@ -145,6 +145,9 @@ export const planSchema = z.object({
 
 export const chatTitleSchema = z.object({
     message: z.string().min(1, 'Message is required').max(10_000),
+    // Optional assistant-reply excerpt — lets the titler name the conversation
+    // by what it's actually about rather than only the opening question.
+    reply: z.string().max(10_000).optional(),
     conversationId: z.string().uuid().optional(),
 });
 

@@ -9,6 +9,7 @@ import { useState } from 'react';
 import { CodeExecution } from '@/types';
 import CodeExecutionPanel from './CodeExecutionPanel';
 import { motion } from 'framer-motion';
+import { MermaidDiagram } from '@/components/Sonoma/MermaidDiagram';
 
 interface CodeBlockProps {
     language: string;
@@ -36,6 +37,12 @@ export default function CodeBlock({ language, value, execution }: CodeBlockProps
         setCopied(true);
         setTimeout(() => setCopied(false), 2000);
     };
+
+    // Mermaid fences render as live diagrams (flowchart, sequence, ER, gantt…)
+    // instead of highlighted source — same treatment as the Sonoma surface.
+    if (language === 'mermaid') {
+        return <MermaidDiagram code={value} />;
+    }
 
     // Custom style overrides to match the design system
     const customStyle: React.CSSProperties = {

@@ -21,6 +21,9 @@ import { SONOMA_TOOLS, runTool, type ToolCall } from '@/lib/sonoma/tools';
 import { getComposioToolset } from '@/lib/composio/tools';
 import { streamOnce } from '@/lib/sonoma/upstream';
 import { runDeepCodePipeline } from '@/lib/sonoma/deepcode';
+import { listMemories } from '@/lib/db/user-memory';
+import { learnFromExchange } from '@/lib/memory/learner';
+import { sanitizeExternalContent } from '@/lib/security/sanitize';
 
 export const runtime = 'nodejs';
 // Deep Code pipelines run several sequential model stages — give them room.
@@ -39,6 +42,11 @@ interface RouteBody {
     // user's in-browser Linux VM (client-side), so the server tool just
     // acknowledges and the client streams the real output into the card.
     sandbox?: boolean;
+    // Memory skill (settings toggle, default on). When enabled for a signed-in
+    // user, stored memories are injected into the system prompt and, after the
+    // exchange, big-pickle autonomously extracts new durable facts about the
+    // user in the background (src/lib/memory/learner.ts).
+    memory?: boolean;
     page?: SonomaPage;
     // Persona id (e.g. 'astro-5', 'tura-3'). Selects the upstream backend.
     model?: string;
@@ -76,7 +84,7 @@ export async function POST(req: NextRequest) {
     } catch {
         return new Response('Bad JSON', { status: 400 });
     }
-    const { messages, reason = false, browse = false, code = false, deepCode = false, sandbox = false, page = 'chat', model, dev } = body;
+    const { messages, reason = false, browse = false, code = false, deepCode = false, sandbox = false, memory = true, page = 'chat', model, dev } = body;
     // The run_bash tool is only offered when the Sandboxed Linux skill is on.
     const builtinTools = sandbox ? SONOMA_TOOLS : SONOMA_TOOLS.filter((t) => t.function.name !== 'run_bash');
     // Connector (Composio) tools for the apps this user has linked in
@@ -139,6 +147,30 @@ export async function POST(req: NextRequest) {
         );
     }
 
+    // Memory skill: stored facts about this user go into the system prompt.
+    // Signed-in users only; any DB problem degrades to "no memories".
+    const memoryOn = memory && !!userId;
+    let userMemories: string[] = [];
+    if (memoryOn) {
+        try {
+            userMemories = (await listMemories(userId!, 25)).map((m) => sanitizeExternalContent(m.content));
+        } catch {
+            userMemories = [];
+        }
+    }
+
+    // After the reply finishes, learn about the user in the background —
+    // never awaited on the hot path, never allowed to throw.
+    const lastUserMessage = [...messages].reverse().find((m) => m.role === 'user')?.content ?? '';
+    const learnInBackground = (assistantText: string) => {
+        if (!memoryOn || !assistantText.trim()) return;
+        void learnFromExchange({
+            userId: userId!,
+            userMessage: lastUserMessage,
+            assistantMessage: assistantText,
+        });
+    };
+
     const encoder = new TextEncoder();
     const stream = new ReadableStream({
         async start(controller) {
@@ -165,9 +197,13 @@ export async function POST(req: NextRequest) {
             // guardrails), so they are dropped — same policy as the DeepCode
             // pipeline. The app's own client never sends them anyway.
             const history: Array<Record<string, unknown>> = [
-                { role: 'system', content: buildSonomaSystemPrompt(page, reason, browse, code, model, deepCode, sandbox, composio?.apps ?? []) },
+                { role: 'system', content: buildSonomaSystemPrompt(page, reason, browse, code, model, deepCode, sandbox, composio?.apps ?? [], userMemories) },
                 ...messages.filter((m) => m.role !== 'system'),
             ];
+
+            // Everything streamed to the user this request — fed to the
+            // background memory learner once the reply completes.
+            let fullReply = '';
 
             try {
                 for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
@@ -210,9 +246,12 @@ export async function POST(req: NextRequest) {
                         }
                     }
 
+                    fullReply += assistantContent;
+
                     if (turnToolCalls.length === 0) {
                         enqueue({ type: 'done' });
                         controller.close();
+                        learnInBackground(fullReply);
                         return;
                     }
 
@@ -280,9 +319,10 @@ export async function POST(req: NextRequest) {
                     if (finalSplitter) {
                         const { thinking, content } = finalSplitter.feed(delta);
                         if (thinking) enqueue({ type: 'thinking', delta: thinking });
-                        if (content) { answered = true; enqueue({ type: 'content', delta: content }); }
+                        if (content) { answered = true; fullReply += content; enqueue({ type: 'content', delta: content }); }
                     } else {
                         answered = true;
+                        fullReply += delta;
                         enqueue({ type: 'content', delta });
                     }
                 };
@@ -305,6 +345,7 @@ export async function POST(req: NextRequest) {
                 }
                 enqueue({ type: 'done' });
                 controller.close();
+                learnInBackground(fullReply);
             } catch (e) {
                 const message = e instanceof Error ? e.message : 'Unknown error';
                 enqueue({ type: 'error', message });

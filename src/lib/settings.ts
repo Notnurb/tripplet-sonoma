@@ -24,6 +24,9 @@ export interface AppSettings {
     // Linux VM and run bash in it via the run_bash skill. Disable to remove
     // the skill entirely.
     sandboxedLinux: boolean;
+    // Memory skill — Tripplet learns durable facts about you from your chats
+    // (extracted autonomously in the background) and personalizes answers.
+    memorySkill: boolean;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -40,6 +43,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
     autoSkills: 'off',
     legacyModels: false,
     sandboxedLinux: true,
+    memorySkill: true,
 };
 
 const KEY = 'tripplet_app_settings_v2';

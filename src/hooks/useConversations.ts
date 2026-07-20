@@ -4,6 +4,7 @@ import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { Message, Conversation } from '@/types';
 import { v4 as uuidv4 } from 'uuid';
 import { useAuth } from '@/context/AuthContext';
+import { loadSettings } from '@/lib/settings';
 
 const STORAGE_KEY = 'tripplet_conversations';
 
@@ -16,6 +17,15 @@ function syncSigOf(c: Conversation): string {
         for (let i = 0; i < s.length; i++) hash = (hash * 31 + s.charCodeAt(i)) | 0;
     }
     return `${c.title}|${c.model}|${c.messages.length}|${hash}`;
+}
+
+// A conversation still carries a placeholder title if it's the default or just
+// a prefix of the first user message (how createConversation/saveConversation
+// derive titles before the AI namer has run).
+function hasPlaceholderTitle(c: Conversation): boolean {
+    if (!c.title || c.title === 'New Chat') return true;
+    const first = c.messages.find((m) => m.role === 'user')?.content.trim();
+    return !!first && first.startsWith(c.title.trim());
 }
 
 /**
@@ -227,6 +237,50 @@ export function useConversations() {
         }, 1500);
         return () => clearTimeout(timeout);
     }, [conversations, historyLoaded, isSignedIn, isAuthLoaded, conversationsRef]);
+
+    // AI conversation naming (big-pickle via /api/chat/title): once a
+    // conversation has its first real exchange and still wears a placeholder
+    // title, ask the namer once and rename in place. The rename flows through
+    // the cloud-sync effect automatically. Off when the Auto-title setting is.
+    const titleAttemptedRef = useRef<Set<string>>(new Set());
+    useEffect(() => {
+        if (!historyLoaded || !loadSettings().autoTitle) return;
+        const timeout = setTimeout(async () => {
+            const candidates = conversationsRef.current.filter(
+                (c) =>
+                    !titleAttemptedRef.current.has(c.id) &&
+                    hasPlaceholderTitle(c) &&
+                    c.messages.some((m) => m.role === 'user') &&
+                    c.messages.some((m) => m.role === 'assistant'),
+            );
+            for (const c of candidates.slice(0, 3)) {
+                titleAttemptedRef.current.add(c.id);
+                const firstUser = c.messages.find((m) => m.role === 'user');
+                const firstReply = c.messages.find((m) => m.role === 'assistant');
+                if (!firstUser?.content.trim()) continue;
+                try {
+                    const res = await fetch('/api/chat/title', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            message: firstUser.content.slice(0, 2000),
+                            reply: firstReply?.content.slice(0, 2000),
+                        }),
+                    });
+                    if (!res.ok) continue;
+                    const { title } = await res.json();
+                    if (typeof title === 'string' && title.trim() && title !== 'New Chat') {
+                        setConversations((prev) =>
+                            prev.map((p) => (p.id === c.id ? { ...p, title: title.trim().slice(0, 60) } : p)),
+                        );
+                    }
+                } catch {
+                    // Placeholder title stays — retried never, it's cosmetic.
+                }
+            }
+        }, 1200);
+        return () => clearTimeout(timeout);
+    }, [conversations, historyLoaded, conversationsRef]);
 
     const activeConversation = useMemo(
         () => conversations.find((c) => c.id === activeConversationId),

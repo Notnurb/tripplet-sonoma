@@ -1,8 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { titleLimiter, LIMITS, rateLimitResponse, getRateLimitToken } from '@/lib/security/rate-limit';
 import { auth } from '@/lib/auth/session';
-import { LLM_API_URL, LLM_API_KEY, LLM_DEFAULT_MODEL } from '@/lib/ai/llm';
+import {
+    LLM_API_URL, LLM_API_KEY, LLM_DEFAULT_MODEL,
+    OPENCODE_ZEN_API_URL, OPENCODE_ZEN_API_KEY,
+} from '@/lib/ai/llm';
 import { parseBody, chatTitleSchema } from '@/lib/validation';
+
+// Conversation naming runs on big-pickle (OpenCode Zen) — fast and cheap, and
+// the same model that powers the Memory skill's fact extraction. Groq remains
+// the fallback when no Zen key is configured.
+const TITLE_MODEL = process.env.TITLE_MODEL || 'big-pickle';
 
 export const runtime = 'nodejs';
 
@@ -19,26 +27,29 @@ export async function POST(request: NextRequest) {
 
         const { data, error: validationError } = await parseBody(request, chatTitleSchema);
         if (validationError) return validationError;
-        const { message } = data;
+        const { message, reply } = data;
 
-        const response = await fetch(LLM_API_URL, {
+        const useZen = !!OPENCODE_ZEN_API_KEY;
+        const response = await fetch(useZen ? OPENCODE_ZEN_API_URL : LLM_API_URL, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'Authorization': `Bearer ${LLM_API_KEY}`,
+                'Authorization': `Bearer ${useZen ? OPENCODE_ZEN_API_KEY : LLM_API_KEY}`,
             },
             body: JSON.stringify({
                 messages: [
                     {
                         role: 'system',
-                        content: 'Generate a short, concise title (3-6 words) for a conversation starting with the user\'s message. Return only the plain text title with no quotes or labels.'
+                        content: 'Name this conversation based on what it is actually about. Return a short title (3-6 words), plain text only — no quotes, labels, or punctuation at the end.'
                     },
                     {
                         role: 'user',
-                        content: message.slice(0, 500), // cap input length
+                        content:
+                            `User's message:\n${message.slice(0, 500)}` +
+                            (reply ? `\n\nAssistant's reply (excerpt):\n${reply.slice(0, 500)}` : ''),
                     }
                 ],
-                model: LLM_DEFAULT_MODEL,
+                model: useZen ? TITLE_MODEL : LLM_DEFAULT_MODEL,
                 stream: false,
                 temperature: 0.5,
                 max_tokens: 15,

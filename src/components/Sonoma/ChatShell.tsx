@@ -148,10 +148,12 @@ export default function SonomaChatShell({ page = 'chat', conversationId, transpa
     const { createConversation, selectConversation, saveConversation } = useChatActions();
     const [legacyModels, setLegacyModels] = useState(false);
     const [sandboxEnabled, setSandboxEnabled] = useState(false);
+    const [memoryEnabled, setMemoryEnabled] = useState(true);
     useEffect(() => {
         const sync = () => {
             const s = loadSettings();
             setLegacyModels(s.legacyModels);
+            setMemoryEnabled(s.memorySkill ?? true);
             // Skill is live only when enabled AND the VM has been downloaded.
             const live = s.sandboxedLinux && isVmDownloaded();
             setSandboxEnabled(live);
@@ -338,6 +340,7 @@ export default function SonomaChatShell({ page = 'chat', conversationId, transpa
                 page,
                 model,
                 sandbox: sandboxEnabled,
+                memory: memoryEnabled,
                 // Override auth rides on the HttpOnly dev_unlock cookie.
                 ...(devOverride
                     ? { dev: { apiKey: devOverride.apiKey, modelId: devOverride.modelId } }
@@ -435,7 +438,7 @@ export default function SonomaChatShell({ page = 'chat', conversationId, transpa
                 setBusy(false);
             }
         },
-        [browse, reason, codeMode, deepCode, page, model, devOverride, sandboxEnabled, execBash],
+        [browse, reason, codeMode, deepCode, page, model, devOverride, sandboxEnabled, memoryEnabled, execBash],
     );
 
     const handleSend = useCallback(async () => {
