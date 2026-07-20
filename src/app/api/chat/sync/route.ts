@@ -88,10 +88,18 @@ export async function POST(request: NextRequest) {
                         (m.attachments?.length || m.codeExecutions?.length)
                             ? JSON.stringify({ attachments: m.attachments, codeExecutions: m.codeExecutions })
                             : null;
+                    // Message.id is a GLOBAL primary key, but client message ids
+                    // (e.g. "u_abc1234") are only unique within one conversation —
+                    // namespace them so two conversations can never collide and
+                    // poison this transaction. Already-namespaced ids (from a
+                    // history round-trip) pass through unchanged.
+                    const messageId = m.id
+                        ? (m.id.startsWith(`${conv.id}:`) ? m.id : `${conv.id}:${m.id}`).slice(0, 128)
+                        : null;
                     await tx.query(
                         `INSERT INTO "Message" (id, "conversationId", role, content, attachments, "createdAt")
                          VALUES (COALESCE($1, gen_random_uuid()::text), $2, $3, $4, $5::jsonb, $6)`,
-                        [m.id ?? null, conv.id, m.role, encryptText(m.content), metadata, ts],
+                        [messageId, conv.id, m.role, encryptText(m.content), metadata, ts],
                     );
                 }
             });

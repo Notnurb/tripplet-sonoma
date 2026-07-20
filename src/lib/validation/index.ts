@@ -154,7 +154,9 @@ export const chatTitleSchema = z.object({
 // ─── Conversation cloud sync (Sonoma chat) ────────────────────────────────────
 
 const syncMessageSchema = z.object({
-    id: z.string().min(1).max(64).regex(/^[\w.-]+$/, 'Invalid message id').optional(),
+    // ':' appears in ids that have round-tripped through the sync route's
+    // per-conversation namespacing ("<convId>:<clientId>").
+    id: z.string().min(1).max(128).regex(/^[\w.:-]+$/, 'Invalid message id').optional(),
     role: z.enum(['user', 'assistant']),
     content: z.string().max(200_000),
     timestamp: z.union([z.string(), z.number(), z.date()]).optional(),
