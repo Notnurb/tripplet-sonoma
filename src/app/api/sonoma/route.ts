@@ -90,7 +90,16 @@ export async function POST(req: NextRequest) {
     // Connector (Composio) tools for the apps this user has linked in
     // Settings → Connectors. Guests and un-configured deploys get none, and
     // any Composio failure degrades to none — chat must never block on it.
-    const composio = await getComposioToolset(userId);
+    // Started concurrently with the memory fetch below so pre-stream latency
+    // is the slower of the two, not their sum.
+    const composioPromise = getComposioToolset(userId);
+    const memoriesPromise: Promise<string[]> =
+        memory && userId
+            ? listMemories(userId, 25)
+                  .then((rows) => rows.map((m) => sanitizeExternalContent(m.content)))
+                  .catch(() => [])
+            : Promise.resolve([]);
+    const composio = await composioPromise;
     const activeTools = [...builtinTools, ...(composio?.defs ?? [])];
     if (!Array.isArray(messages) || messages.length === 0) {
         return new Response('messages required', { status: 400 });
@@ -150,14 +159,7 @@ export async function POST(req: NextRequest) {
     // Memory skill: stored facts about this user go into the system prompt.
     // Signed-in users only; any DB problem degrades to "no memories".
     const memoryOn = memory && !!userId;
-    let userMemories: string[] = [];
-    if (memoryOn) {
-        try {
-            userMemories = (await listMemories(userId!, 25)).map((m) => sanitizeExternalContent(m.content));
-        } catch {
-            userMemories = [];
-        }
-    }
+    const userMemories: string[] = await memoriesPromise;
 
     // After the reply finishes, learn about the user in the background —
     // never awaited on the hot path, never allowed to throw.

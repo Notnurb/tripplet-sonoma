@@ -185,7 +185,22 @@ export async function POST(request: NextRequest) {
 
         // Only use hivemind if authenticated to prevent memory poisoning
         const memoryUserId = (isHivemind && userId) ? 'collective-hivemind' : userId;
-        const memoryRows: UserMemoryRow[] = memoryUserId ? await getMemoryRows(memoryUserId) : [];
+
+        // Memory, feedback signals, and (below) web search are independent
+        // I/O — kick them all off NOW and await at the point of use, so the
+        // pre-stream latency is the slowest fetch instead of their sum.
+        const memoryRowsPromise: Promise<UserMemoryRow[]> = memoryUserId
+            ? getMemoryRows(memoryUserId)
+            : Promise.resolve([]);
+        const feedbackBlockPromise = userId ? getFeedbackSignals(userId) : Promise.resolve(null);
+
+        const lastUserMsgLower = lastUserMsgContent.toLowerCase();
+        const autoSearchKeyword = /\b(search|latest|current|recent|price|news|today|2024|2025|2026|weather|stock|score|release|update|announce|launch|trending|statistics|stats|compare|versus|vs|ranking|results)\b/.test(lastUserMsgLower);
+        const autoSearchQuestion = lastUserMsgLower.includes('?') && (
+            /^(who is|who was|who are|what is|what are|what was|what's|where is|where do|where can|when did|when is|when does|when was|why did|why is|why does|why are|how much|how many|how does|how do|how did|how to|how can|is there|are there|can you find|do you know|tell me about)/.test(lastUserMsgLower)
+        );
+        const wantsSearch = modeSettings.enableWebSearch || (lastUserMsgLower.length > 10 && (autoSearchKeyword || autoSearchQuestion));
+        const searchPromise = wantsSearch ? fetchWebSearchResults(lastUserMsgContent) : null;
 
         // systemPromptOverride is a privileged operation — only authenticated users may use it,
         // and the override is silently dropped for guest sessions to prevent injection attacks
@@ -231,7 +246,7 @@ Rules:
         // satisfaction skew) so thumbs-up/down actually steer how Tripplet
         // talks. Authenticated users only — no signals to derive for guests.
         if (userId) {
-            const feedbackBlock = await getFeedbackSignals(userId);
+            const feedbackBlock = await feedbackBlockPromise;
             if (feedbackBlock) {
                 systemPrompt += `\n\n${feedbackBlock}`;
             }
@@ -246,22 +261,10 @@ Rules:
             }
         }
 
-        const qLowerCase = lastUserMsgContent.toLowerCase();
-        // Only auto-search when the query looks like a factual/temporal question —
-        // not conversational phrases like "how are you" or "what do you think"
-        const hasFactualKeyword = /\b(search|latest|current|recent|price|news|today|2024|2025|2026|weather|stock|score|release|update|announce|launch|trending|statistics|stats|compare|versus|vs|ranking|results)\b/.test(qLowerCase);
-        const hasFactualQuestion = qLowerCase.includes('?') && (
-            /^(who is|who was|who are|what is|what are|what was|what's|where is|where do|where can|when did|when is|when does|when was|why did|why is|why does|why are|how much|how many|how does|how do|how did|how to|how can|is there|are there|can you find|do you know|tell me about)/.test(qLowerCase)
-        );
-        const shouldAutoSearch = qLowerCase.length > 10 && (
-            hasFactualKeyword ||
-            hasFactualQuestion
-        );
-
         const searchStats = { count: 0, failed: false };
 
-        if (modeSettings.enableWebSearch || shouldAutoSearch) {
-            const searchResults = await fetchWebSearchResults(lastUserMsgContent);
+        if (searchPromise) {
+            const searchResults = await searchPromise;
             if (searchResults.text) {
                 systemPrompt += `\n${searchResults.text}`;
                 searchStats.count = searchResults.count;
@@ -278,7 +281,7 @@ Rules:
         // the last thing the model sees before user turns. Authenticated users
         // only (guests have no persistent memory).
         if (userId) {
-            systemPrompt += `\n\n${buildMemoryBlock(memoryRows)}`;
+            systemPrompt += `\n\n${buildMemoryBlock(await memoryRowsPromise)}`;
         }
 
         const apiMessages: ProviderChatMessage[] = [
