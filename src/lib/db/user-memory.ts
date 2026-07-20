@@ -1,6 +1,15 @@
 // UserMemory persistence via the Neon (PostgreSQL) query layer.
+//
+// Memory content is encrypted at rest with the same JWT_SECRET-derived
+// AES-256-GCM key the conversation store uses (src/lib/chat/crypto.ts) —
+// no extra env var, any deploy where auth works can encrypt. Encryption and
+// decryption both live HERE so every caller (profile UI, import, chat,
+// Sonoma, the memory learner) gets plaintext in and plaintext out; legacy
+// unencrypted rows pass through reads untouched. Tags stay plaintext — they
+// are short lowercase keywords used for filtering, not sentences about you.
 
 import { query, isMissingTableError } from './neon';
+import { encryptText, decryptText } from '@/lib/chat/crypto';
 
 export interface UserMemoryRow {
     id: string;
@@ -60,6 +69,10 @@ function isInvalidCredentials(error: unknown): boolean {
 const SELECT_COLS =
     'id, "userId", content, tags, source, "createdAt", "updatedAt"';
 
+function decryptRow(row: UserMemoryRow): UserMemoryRow {
+    return { ...row, content: decryptText(row.content) };
+}
+
 async function run<T>(fn: () => Promise<T>): Promise<T> {
     try {
         return await fn();
@@ -75,7 +88,7 @@ async function run<T>(fn: () => Promise<T>): Promise<T> {
 }
 
 export async function listMemories(userId: string, limit = 50): Promise<UserMemoryRow[]> {
-    return run(() =>
+    const rows = await run(() =>
         query<UserMemoryRow>(
             `SELECT ${SELECT_COLS} FROM "UserMemory"
              WHERE "userId" = $1
@@ -84,21 +97,22 @@ export async function listMemories(userId: string, limit = 50): Promise<UserMemo
             [userId, limit],
         ),
     );
+    return rows.map(decryptRow);
 }
 
 export async function searchMemories(userId: string, queryText: string, limit = 20): Promise<UserMemoryRow[]> {
     if (!queryText) return listMemories(userId, 10);
-    const ilike = `%${queryText.replace(/[%_]/g, (m) => `\\${m}`)}%`;
-    return run(() =>
-        query<UserMemoryRow>(
-            `SELECT ${SELECT_COLS} FROM "UserMemory"
-             WHERE "userId" = $1
-               AND (content ILIKE $2 OR tags @> ARRAY[$3]::text[])
-             ORDER BY "createdAt" DESC
-             LIMIT $4`,
-            [userId, ilike, queryText.toLowerCase(), limit],
-        ),
-    );
+    // Content is ciphertext in the database, so SQL ILIKE can't see it —
+    // pull the user's recent memories, decrypt, and filter here. Memory
+    // volume is capped (~200 rows), so this stays cheap.
+    const rows = await listMemories(userId, 200);
+    const q = queryText.toLowerCase();
+    return rows
+        .filter((r) =>
+            r.content.toLowerCase().includes(q) ||
+            (Array.isArray(r.tags) && r.tags.some((t) => t.toLowerCase() === q)),
+        )
+        .slice(0, limit);
 }
 
 export async function createMemory(params: {
@@ -115,11 +129,11 @@ export async function createMemory(params: {
             `INSERT INTO "UserMemory" (id, "userId", content, tags, source, "createdAt", "updatedAt")
              VALUES (gen_random_uuid()::text, $1, $2, $3, $4, now(), now())
              RETURNING ${SELECT_COLS}`,
-            [params.userId, params.content, params.tags, params.source],
+            [params.userId, encryptText(params.content), params.tags, params.source],
         ),
     );
     if (rows.length === 0) throw new Error('Insert returned no row');
-    return rows[0];
+    return decryptRow(rows[0]);
 }
 
 export async function updateMemory(params: {
@@ -131,7 +145,7 @@ export async function updateMemory(params: {
     const sets: string[] = ['"updatedAt" = now()'];
     const values: unknown[] = [];
     if (params.content !== undefined) {
-        values.push(params.content);
+        values.push(encryptText(params.content));
         sets.push(`content = $${values.length}`);
     }
     if (params.tags !== undefined) {
@@ -152,7 +166,7 @@ export async function updateMemory(params: {
         ),
     );
     if (rows.length === 0) throw new Error('Memory not found');
-    return rows[0];
+    return decryptRow(rows[0]);
 }
 
 export async function deleteMemory(userId: string, id: string): Promise<boolean> {
