@@ -21,7 +21,7 @@ import {
 import { getModelSystemPrompt } from '@/lib/ai/model-prompts';
 import type { OpenAIStreamChunk } from './upstream';
 
-const DEEP_CODE_MAX_THINK_ROUNDS = 4;
+const DEEP_CODE_MAX_THINK_ROUNDS = 12;
 const DEEP_CODE_CONTEXT_CHARS = 28_000;
 
 // Wall-clock budget for the whole pipeline. The per-stage timeouts could sum
@@ -30,9 +30,9 @@ const DEEP_CODE_CONTEXT_CHARS = 28_000;
 // every stage is carved out of one shared deadline that stays under the cap,
 // and the coder stage (the only one that produces the visible answer) always
 // has time reserved for it.
-const DEEP_CODE_TOTAL_BUDGET_MS = 280_000;
-const DEEP_CODE_CODE_RESERVE_MS = 150_000;
-const DEEP_CODE_THINK_ROUND_MAX_MS = 100_000;
+const DEEP_CODE_TOTAL_BUDGET_MS = 290_000;
+const DEEP_CODE_CODE_RESERVE_MS = 120_000;
+const DEEP_CODE_THINK_ROUND_MAX_MS = 45_000;
 const DEEP_CODE_ROUTER_TIMEOUT_MS = 20_000;
 
 const DEEP_CODE_SECRECY =
