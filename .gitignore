@@ -66,3 +66,7 @@ bin/
 opensonoma-agent/relay/node_modules/
 peaclock/
 *.save
+
+# Python virtualenvs (machine-specific symlinks break Turbopack builds; rebuild
+# with `python3 -m venv .venv && pip install -r requirements.txt`)
+.venv/

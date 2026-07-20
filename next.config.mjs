@@ -22,6 +22,10 @@ const nextConfig = {
     NEXT_PUBLIC_CUSTOM_MODELS: JSON.stringify(pickerModels),
   },
   compress: true,
+  // A stray lockfile in $HOME makes Turbopack infer the wrong workspace root.
+  turbopack: {
+    root: projectRoot,
+  },
   // Tree-shake large barrel-file packages so each route only ships the icons /
   // helpers it actually imports — meaningfully smaller client bundles.
   experimental: {

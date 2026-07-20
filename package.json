@@ -15,10 +15,10 @@
   "author": "",
   "main": "index.js",
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev --turbopack",
     "setup": "node scripts/setup-tui.mjs",
     "dev:vite": "vite --host --port 5173 --open --force --strictPort --clearScreen=false --logLevel info",
-    "build": "prisma migrate deploy && next build",
+    "build": "prisma migrate deploy && next build --turbopack",
     "start": "next start",
     "lint": "eslint",
     "type-check": "tsc --noEmit",
