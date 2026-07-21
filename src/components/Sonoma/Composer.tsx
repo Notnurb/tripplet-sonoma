@@ -6,6 +6,11 @@ import { useIsMobile } from '@/hooks/useIsMobile';
 import { cn } from '@/lib/utils';
 import ConnectorsMenu from './ConnectorsMenu';
 import {
+    DEEP_CODE_REASONING_LEVELS,
+    DEEP_CODE_REASONING_LEVEL_LABELS,
+    type DeepCodeReasoningLevel,
+} from '@/lib/sonoma/reasoning-levels';
+import {
     SonomaClip,
     SonomaSend,
     SonomaStop,
@@ -48,6 +53,8 @@ interface SonomaComposerProps {
     onToggleCode?: () => void;
     deepCode?: boolean;
     onToggleDeepCode?: () => void;
+    deepCodeLevel?: DeepCodeReasoningLevel;
+    onDeepCodeLevelChange?: (level: DeepCodeReasoningLevel) => void;
 
     // Show the Connectors (Composio apps) chip + menu. Opt-in so surfaces
     // like the /dev panel stay unchanged.
@@ -112,6 +119,101 @@ function ToolChip({
             </span>
             <span>{label}</span>
         </button>
+    );
+}
+
+// DeepCode's tool chip plus a chevron that opens a popover with a slider for
+// picking the pipeline's reasoning level (Low ... Supercode).
+function DeepCodeChip({
+    active,
+    onClick,
+    level,
+    onLevelChange,
+    compact,
+}: {
+    active: boolean;
+    onClick: () => void;
+    level: DeepCodeReasoningLevel;
+    onLevelChange: (level: DeepCodeReasoningLevel) => void;
+    compact?: boolean;
+}) {
+    const [open, setOpen] = useState(false);
+    const wrapRef = useRef<HTMLDivElement>(null);
+    const idx = Math.max(0, DEEP_CODE_REASONING_LEVELS.indexOf(level));
+
+    useEffect(() => {
+        function onDoc(e: MouseEvent) {
+            if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
+        }
+        document.addEventListener('mousedown', onDoc);
+        return () => document.removeEventListener('mousedown', onDoc);
+    }, []);
+
+    return (
+        <div ref={wrapRef} className="relative inline-flex items-center gap-0.5">
+            <ToolChip active={active} onClick={onClick} icon={<SonomaCode size={16} />} label="DeepCode" compact={compact} />
+            <button
+                type="button"
+                onClick={() => setOpen((o) => !o)}
+                aria-label="DeepCode reasoning level"
+                aria-expanded={open}
+                title={`Reasoning: ${DEEP_CODE_REASONING_LEVEL_LABELS[level]}`}
+                className="inline-flex h-6 w-6 items-center justify-center rounded-full transition-colors"
+                style={{
+                    color: active ? 'var(--sonoma-accent-2)' : 'var(--sonoma-ink-2)',
+                    transform: open ? 'rotate(180deg)' : undefined,
+                }}
+            >
+                <SonomaChevron />
+            </button>
+            {open && (
+                <div
+                    className="sm-pop absolute z-30"
+                    style={{
+                        bottom: 'calc(100% + 8px)',
+                        left: 0,
+                        width: 224,
+                        padding: '12px 14px 14px',
+                        background: 'var(--sonoma-surface)',
+                        border: '1px solid var(--sonoma-border)',
+                        borderRadius: 14,
+                        boxShadow: 'var(--sonoma-shadow-lg)',
+                    }}
+                >
+                    <div className="mb-2.5 flex items-center justify-between">
+                        <span className="text-[12px] font-medium" style={{ color: 'var(--sonoma-ink-2)' }}>
+                            Reasoning level
+                        </span>
+                        <span className="text-[12.5px] font-semibold" style={{ color: 'var(--sonoma-accent-2)' }}>
+                            {DEEP_CODE_REASONING_LEVEL_LABELS[level]}
+                        </span>
+                    </div>
+                    <input
+                        type="range"
+                        min={0}
+                        max={DEEP_CODE_REASONING_LEVELS.length - 1}
+                        step={1}
+                        value={idx}
+                        onChange={(e) => onLevelChange(DEEP_CODE_REASONING_LEVELS[Number(e.target.value)])}
+                        className="w-full accent-[var(--sonoma-accent)]"
+                        aria-label="DeepCode reasoning level slider"
+                    />
+                    <div className="mt-1.5 flex justify-between px-0.5">
+                        {DEEP_CODE_REASONING_LEVELS.map((l) => (
+                            <span
+                                key={l}
+                                className="text-[9.5px] font-medium"
+                                style={{
+                                    color: l === level ? 'var(--sonoma-ink)' : 'var(--sonoma-faint)',
+                                }}
+                            >
+                                {DEEP_CODE_REASONING_LEVEL_LABELS[l][0]}
+                            </span>
+                        ))}
+                    </div>
+                </div>
+            )}
+        </div>
     );
 }
 
@@ -310,6 +412,8 @@ export default function SonomaComposer({
     onToggleCode,
     deepCode,
     onToggleDeepCode,
+    deepCodeLevel,
+    onDeepCodeLevelChange,
     connectors,
     attachments = true,
     placeholder,
@@ -491,11 +595,11 @@ export default function SonomaComposer({
                     />
                 )}
                 {onToggleDeepCode && (
-                    <ToolChip
+                    <DeepCodeChip
                         active={!!deepCode}
                         onClick={onToggleDeepCode}
-                        icon={<SonomaCode size={16} />}
-                        label="DeepCode"
+                        level={deepCodeLevel ?? 'high'}
+                        onLevelChange={onDeepCodeLevelChange ?? (() => {})}
                         compact={isMobile}
                     />
                 )}

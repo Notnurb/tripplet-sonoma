@@ -4,6 +4,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import { modelsForPage, DEEP_CODE_PERSONA, type WorkspacePage } from '@/lib/ai/models';
+import {
+    DEEP_CODE_DEFAULT_REASONING_LEVEL,
+    type DeepCodeReasoningLevel,
+} from '@/lib/sonoma/reasoning-levels';
 import { loadSettings, SETTINGS_EVENT } from '@/lib/settings';
 import { useChatConversations, useChatActions } from '@/context/ChatContext';
 import { runBash, isVmDownloaded, bootVm } from '@/lib/sandbox/trippletLinux';
@@ -173,6 +177,9 @@ export default function SonomaChatShell({ page = 'chat', conversationId, transpa
     // DeepCode (code page only): swaps the model lineup to the deep-coding
     // set headlined by Astro 5 Code, a multi-stage pipeline persona.
     const [deepCode, setDeepCode] = useState(false);
+    const [deepCodeLevel, setDeepCodeLevel] = useState<DeepCodeReasoningLevel>(
+        DEEP_CODE_DEFAULT_REASONING_LEVEL,
+    );
     const pageModels = useMemo(
         () => modelsForPage(page, legacyModels, deepCode),
         [page, legacyModels, deepCode],
@@ -337,6 +344,7 @@ export default function SonomaChatShell({ page = 'chat', conversationId, transpa
                 browse,
                 code: codeMode,
                 deepCode,
+                deepCodeLevel,
                 page,
                 model,
                 sandbox: sandboxEnabled,
@@ -438,7 +446,7 @@ export default function SonomaChatShell({ page = 'chat', conversationId, transpa
                 setBusy(false);
             }
         },
-        [browse, reason, codeMode, deepCode, page, model, devOverride, sandboxEnabled, memoryEnabled, execBash],
+        [browse, reason, codeMode, deepCode, deepCodeLevel, page, model, devOverride, sandboxEnabled, memoryEnabled, execBash],
     );
 
     const handleSend = useCallback(async () => {
@@ -616,6 +624,8 @@ export default function SonomaChatShell({ page = 'chat', conversationId, transpa
                                             onToggleCode={page === 'code' ? undefined : () => setCodeMode((c) => !c)}
                                             deepCode={deepCode}
                                             onToggleDeepCode={page === 'code' ? () => setDeepCode((d) => !d) : undefined}
+                                            deepCodeLevel={deepCodeLevel}
+                                            onDeepCodeLevelChange={setDeepCodeLevel}
                                             connectors
                                             placeholder={GREETINGS[page].placeholder}
                                         />
@@ -742,6 +752,8 @@ export default function SonomaChatShell({ page = 'chat', conversationId, transpa
                                 onToggleCode={page === 'code' ? undefined : () => setCodeMode((c) => !c)}
                                 deepCode={deepCode}
                                 onToggleDeepCode={page === 'code' ? () => setDeepCode((d) => !d) : undefined}
+                                deepCodeLevel={deepCodeLevel}
+                                onDeepCodeLevelChange={setDeepCodeLevel}
                                 connectors
                             />
                             </div>

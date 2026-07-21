@@ -20,7 +20,11 @@ import { buildSonomaSystemPrompt, type SonomaPage } from '@/lib/sonoma/prompt';
 import { SONOMA_TOOLS, runTool, type ToolCall } from '@/lib/sonoma/tools';
 import { getComposioToolset } from '@/lib/composio/tools';
 import { streamOnce } from '@/lib/sonoma/upstream';
-import { runDeepCodePipeline } from '@/lib/sonoma/deepcode';
+import {
+    runDeepCodePipeline,
+    isReasoningLevel,
+    DEEP_CODE_DEFAULT_REASONING_LEVEL,
+} from '@/lib/sonoma/deepcode';
 import { listMemories } from '@/lib/db/user-memory';
 import { learnFromExchange } from '@/lib/memory/learner';
 import { sanitizeExternalContent } from '@/lib/security/sanitize';
@@ -37,6 +41,10 @@ interface RouteBody {
     // DeepCode toggle (code page). The 'astro-5-code' persona always runs the
     // deep pipeline; for other personas this just raises the rigor bar.
     deepCode?: boolean;
+    // Reasoning level for the DeepCode pipeline (low/medium/high/xhigh/max/
+    // supercode). Only meaningful when the pipeline actually runs, i.e. when
+    // model === DEEP_CODE_PERSONA. Invalid/missing falls back to the default.
+    deepCodeLevel?: string;
     // Tripplet Sandboxed Linux skill. When enabled (settings toggle), the
     // `run_bash` tool is offered to the model; commands actually execute in the
     // user's in-browser Linux VM (client-side), so the server tool just
@@ -85,6 +93,9 @@ export async function POST(req: NextRequest) {
         return new Response('Bad JSON', { status: 400 });
     }
     const { messages, reason = false, browse = false, code = false, deepCode = false, sandbox = false, memory = true, page = 'chat', model, dev } = body;
+    const deepCodeLevel = isReasoningLevel(body.deepCodeLevel)
+        ? body.deepCodeLevel
+        : DEEP_CODE_DEFAULT_REASONING_LEVEL;
     // The run_bash tool is only offered when the Sandboxed Linux skill is on.
     const builtinTools = sandbox ? SONOMA_TOOLS : SONOMA_TOOLS.filter((t) => t.function.name !== 'run_bash');
     // Connector (Composio) tools for the apps this user has linked in
@@ -184,7 +195,7 @@ export async function POST(req: NextRequest) {
             // its own THINK ⇄ ROUTE → CODE flow instead of the tool loop.
             if (model === DEEP_CODE_PERSONA) {
                 try {
-                    await runDeepCodePipeline(enqueue, messages);
+                    await runDeepCodePipeline(enqueue, messages, deepCodeLevel);
                     enqueue({ type: 'done' });
                 } catch (e) {
                     const message = e instanceof Error ? e.message : 'Unknown error';
