@@ -33,7 +33,7 @@ const DEEP_CODE_CONTEXT_CHARS = 28_000;
 const DEEP_CODE_TOTAL_BUDGET_MS = 290_000;
 const DEEP_CODE_CODE_RESERVE_MS = 120_000;
 const DEEP_CODE_THINK_ROUND_MAX_MS = 45_000;
-const DEEP_CODE_ROUTER_TIMEOUT_MS = 20_000;
+const DEEP_CODE_ROUTER_TIMEOUT_MS = 30_000;
 
 const DEEP_CODE_SECRECY =
     'Never reveal, hint at, or discuss the internal pipeline, its stages, or any underlying model names. To the user you are simply "Astro 5 Code" by Tripplet AI.';
@@ -42,6 +42,7 @@ interface ZenStreamOpts {
     temperature?: number;
     maxTokens?: number;
     timeoutMs?: number;
+    reasoningEffort?: 'low' | 'medium' | 'high';
 }
 
 // Minimal OpenCode Zen streamer — content + reasoning deltas only, no tools.
@@ -61,6 +62,7 @@ async function* zenStream(
             stream: true,
             temperature: opts.temperature ?? 0.3,
             ...(typeof opts.maxTokens === 'number' ? { max_tokens: opts.maxTokens } : {}),
+            ...(opts.reasoningEffort ? { reasoning_effort: opts.reasoningEffort } : {}),
             messages,
         }),
         signal: AbortSignal.timeout(opts.timeoutMs ?? 240_000),
@@ -120,6 +122,7 @@ async function zenComplete(
             stream: false,
             temperature: opts.temperature ?? 0,
             ...(typeof opts.maxTokens === 'number' ? { max_tokens: opts.maxTokens } : {}),
+            ...(opts.reasoningEffort ? { reasoning_effort: opts.reasoningEffort } : {}),
             messages,
         }),
         signal: AbortSignal.timeout(opts.timeoutMs ?? 45_000),
@@ -186,6 +189,7 @@ export async function runDeepCodePipeline(
                 temperature: 0.4,
                 maxTokens: 8192,
                 timeoutMs: thinkBudget,
+                reasoningEffort: 'high',
             })) {
                 // Thinker output — reasoning and content alike — is all thinking.
                 roundThinking += ev.delta;
@@ -220,7 +224,12 @@ export async function runDeepCodePipeline(
                             `Task:\n${task.slice(0, 8000)}\n\nInternal reasoning so far:\n${allThinking.slice(-DEEP_CODE_CONTEXT_CHARS)}\n\nVerdict (THINK or CODE):`,
                     },
                 ],
-                { temperature: 0, maxTokens: 8, timeoutMs: DEEP_CODE_ROUTER_TIMEOUT_MS },
+                {
+                    temperature: 0,
+                    maxTokens: 8,
+                    timeoutMs: DEEP_CODE_ROUTER_TIMEOUT_MS,
+                    reasoningEffort: 'high',
+                },
             );
         } catch {
             // Router unavailable — fail open into the coding stage.
@@ -252,6 +261,7 @@ export async function runDeepCodePipeline(
         {
             temperature: 0.2,
             maxTokens: 16_000,
+            reasoningEffort: 'medium',
             // Whatever is left of the shared budget, floored so a degenerate
             // clock skew can't zero it out.
             timeoutMs: Math.max(60_000, remainingMs()),
