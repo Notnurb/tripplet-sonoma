@@ -294,6 +294,8 @@ export const uploadLimiter = rateLimit({ name: 'upload', interval: 60 * 60 * 100
 export const engagementLimiter = rateLimit({ name: 'engagement', interval: 60 * 60 * 1000, uniqueTokenPerInterval: 20000 });
 // Connector (Composio) management — browsing apps, connecting, disconnecting.
 export const connectorLimiter = rateLimit({ name: 'connector', interval: 60 * 60 * 1000, uniqueTokenPerInterval: 10000 });
+// Usage summary reads (Settings panel polls every minute + focus refetches).
+export const usageLimiter = rateLimit({ name: 'usage', interval: 60 * 60 * 1000, uniqueTokenPerInterval: 10000 });
 
 // Auth-specific limiters — intentionally strict to block brute-force and abuse.
 export const loginLimiter = rateLimit({ name: 'login', interval: 15 * 60 * 1000, uniqueTokenPerInterval: 10000 }); // 15 min window
@@ -331,6 +333,7 @@ export const LIMITS = {
     upload: 30,         // 30 image uploads/hr — independent of the search budget
     engagement: 20,     // 20 reactions/views per article per hour per token — keeps counts honest
     connector: 120,     // 120 connector ops/hr — the chat composer menu lists on every open, plus connect/disconnect
+    usage: 240,         // 240 usage-summary reads/hr — a 60s poll is 60/hr, leave room for focus refetches
     sync: 360,          // 360 conversation syncs/hr — debounced client pushes, one per pause in typing
 };
 

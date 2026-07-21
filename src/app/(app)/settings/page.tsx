@@ -10,6 +10,7 @@ import { HugeiconsIcon } from '@hugeicons/react';
 import { Loading01Icon } from '@hugeicons/core-free-icons';
 import MemoryPanel from '@/components/settings/MemoryPanel';
 import ConnectorsPanel from '@/components/settings/ConnectorsPanel';
+import UsagePanel from '@/components/settings/UsagePanel';
 import {
     AlertDialog,
     AlertDialogAction,
@@ -272,6 +273,8 @@ export default function SettingsPage() {
                     })}
                 </div>
             </section>
+
+            <UsagePanel />
 
             <section className="space-y-4">
                 <div>

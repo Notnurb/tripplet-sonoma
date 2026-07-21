@@ -28,6 +28,7 @@ import {
 import { listMemories } from '@/lib/db/user-memory';
 import { learnFromExchange } from '@/lib/memory/learner';
 import { sanitizeExternalContent } from '@/lib/security/sanitize';
+import { checkUsageAllowance, usageLimitResponse, recordUsage, finalizeUsage } from '@/lib/usage/tracker';
 
 export const runtime = 'nodejs';
 // Deep Code pipelines run several sequential model stages — give them room.
@@ -138,6 +139,16 @@ export async function POST(req: NextRequest) {
         return new Response('Invalid page', { status: 400 });
     }
 
+    // Plan usage metering — same policy as /api/chat: signed-in users consume
+    // from their 5-hour and weekly message budgets. Guests are already covered
+    // by the strict per-IP cap above. The request is only COUNTED further down,
+    // once every failure-before-inference check (dev unlock, backend config)
+    // has passed — a misconfigured backend must not drain anyone's budget.
+    if (userId) {
+        const allowance = await checkUsageAllowance(userId);
+        if (!allowance.allowed) return usageLimitResponse(allowance);
+    }
+
     // /dev panel override — a locked-down escape hatch that only works while
     // the site is in outage mode, only for the plain tool-loop path (never
     // the DeepCode pipeline), and only with a valid dev-unlock cookie (signed,
@@ -171,6 +182,17 @@ export async function POST(req: NextRequest) {
     // Signed-in users only; any DB problem degrades to "no memories".
     const memoryOn = memory && !!userId;
     const userMemories: string[] = await memoriesPromise;
+
+    // Count the request against the budget now — before the model stream
+    // starts, so concurrent requests can't slip under the allowance check
+    // above, but after every pre-inference rejection path.
+    const usageRecordId: string | null = userId
+        ? await recordUsage({
+              userId,
+              model: model || 'astro-5',
+              promptChars: messages.reduce((n, m) => n + m.content.length, 0),
+          })
+        : null;
 
     // After the reply finishes, learn about the user in the background —
     // never awaited on the hot path, never allowed to throw.
@@ -265,6 +287,7 @@ export async function POST(req: NextRequest) {
                         enqueue({ type: 'done' });
                         controller.close();
                         learnInBackground(fullReply);
+                        if (usageRecordId) void finalizeUsage(usageRecordId, fullReply.length);
                         return;
                     }
 
@@ -359,6 +382,7 @@ export async function POST(req: NextRequest) {
                 enqueue({ type: 'done' });
                 controller.close();
                 learnInBackground(fullReply);
+                if (usageRecordId) void finalizeUsage(usageRecordId, fullReply.length);
             } catch (e) {
                 const message = e instanceof Error ? e.message : 'Unknown error';
                 enqueue({ type: 'error', message });

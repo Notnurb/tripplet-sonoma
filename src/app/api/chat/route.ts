@@ -20,6 +20,7 @@ import { chatLimiter, LIMITS, rateLimitResponse, getRateLimitToken } from '@/lib
 import { serializeMessageMetadata } from '@/lib/chat/message-metadata';
 import { encryptText } from '@/lib/chat/crypto';
 import { parseBody, chatSchema } from '@/lib/validation';
+import { checkUsageAllowance, usageLimitResponse, recordUsage, finalizeUsage } from '@/lib/usage/tracker';
 // The tool schemas, run_code execution streamer, memory block/mirroring, and
 // web-search injection live in src/lib/chat/* — this file holds request flow.
 import { RUN_CODE_TOOL, REMEMBER_TOOL, FORGET_TOOL, UPDATE_TOOL, buildCodeExecutionToolInstructions } from '@/lib/chat/tools';
@@ -98,6 +99,21 @@ export async function POST(request: NextRequest) {
                 );
             }
             guestMessageCache.set(guestKey, currentCount + 1);
+        }
+
+        // Plan usage metering (signed-in users): enforce the 5-hour/weekly
+        // message budgets before persisting anything, and count the request at
+        // admit time so concurrent requests can't slip under the check.
+        let usageRecordId: string | null = null;
+        if (userId) {
+            const allowance = await checkUsageAllowance(userId);
+            if (!allowance.allowed) return usageLimitResponse(allowance);
+            usageRecordId = await recordUsage({
+                userId,
+                conversationId: conversationId || null,
+                model: model || 'tura-3',
+                promptChars: (messages || []).reduce((n, m) => n + m.content.length, 0),
+            });
         }
 
         if (userId && conversationId) {
@@ -554,6 +570,10 @@ Rules:
                     }
 
                     controller.enqueue(encoder.encode('data: [DONE]\n\n'));
+
+                    if (usageRecordId) {
+                        void finalizeUsage(usageRecordId, fullResponse.length);
+                    }
 
                     if (memoryUserId) {
                         storeMemory(memoryUserId, lastUserMsgContent, fullResponse).catch((e) => console.error('[memory] store failed:', e.message));
