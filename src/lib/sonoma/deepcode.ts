@@ -125,32 +125,86 @@ interface ZenStreamOpts {
     reasoningEffort?: 'low' | 'medium' | 'high';
 }
 
+// The pipeline fires many sequential upstream calls per request (think rounds
+// + a router check after every round + draft + final), so a transient 429 or
+// 5xx from OpenCode Zen is a fact of life — especially by the final coder
+// pass, after earlier stages have already spent the provider's rate budget.
+// Those must heal with a short backoff instead of killing the whole pipeline.
+const RETRYABLE_STATUSES = new Set([429, 500, 502, 503, 504]);
+const MAX_ATTEMPTS = 3;
+// Minimum time a real attempt needs; below this, stop retrying and fail.
+const MIN_ATTEMPT_MS = 5_000;
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+function retryDelayMs(attempt: number, res: Response): number {
+    const retryAfter = res.headers.get('retry-after');
+    if (retryAfter !== null) {
+        const seconds = Number(retryAfter);
+        if (Number.isFinite(seconds) && seconds >= 0) return Math.min(seconds * 1000, 20_000);
+    }
+    return Math.min(1_000 * Math.pow(2.5, attempt) + Math.random() * 500, 20_000);
+}
+
+function stageError(status: number): Error {
+    if (status === 429) {
+        return new Error('Astro 5 Code is momentarily over capacity — please wait a few seconds and try again.');
+    }
+    return new Error(
+        status > 0
+            ? `Deep pipeline stage failed (${status}). Please try again.`
+            : 'Deep pipeline stage timed out. Please try again.',
+    );
+}
+
+// POST to OpenCode Zen, retrying retryable statuses with backoff. Retries only
+// ever happen before any body bytes are consumed, so streaming callers can
+// never emit duplicated output. The attempt loop (waits included) stays inside
+// timeoutMs, and the returned response's stream keeps whatever time remains.
+async function zenFetch(body: Record<string, unknown>, timeoutMs: number): Promise<Response> {
+    const deadline = Date.now() + timeoutMs;
+    let lastStatus = 0;
+    for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
+        const remaining = deadline - Date.now();
+        if (remaining < MIN_ATTEMPT_MS) break;
+        const res = await fetch(OPENCODE_ZEN_API_URL, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${OPENCODE_ZEN_API_KEY}`,
+            },
+            body: JSON.stringify(body),
+            signal: AbortSignal.timeout(remaining),
+        });
+        if (res.ok) return res;
+        lastStatus = res.status;
+        await res.text().catch(() => '');
+        if (!RETRYABLE_STATUSES.has(res.status) || attempt === MAX_ATTEMPTS - 1) break;
+        const wait = retryDelayMs(attempt, res);
+        if (Date.now() + wait > deadline - MIN_ATTEMPT_MS) break;
+        await sleep(wait);
+    }
+    throw stageError(lastStatus);
+}
+
 // Minimal OpenCode Zen streamer — content + reasoning deltas only, no tools.
 async function* zenStream(
     model: string,
     messages: Array<Record<string, unknown>>,
     opts: ZenStreamOpts = {},
 ): AsyncGenerator<{ kind: 'content' | 'reasoning'; delta: string }> {
-    const res = await fetch(OPENCODE_ZEN_API_URL, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${OPENCODE_ZEN_API_KEY}`,
-        },
-        body: JSON.stringify({
+    const res = await zenFetch(
+        {
             model,
             stream: true,
             temperature: opts.temperature ?? 0.3,
             ...(typeof opts.maxTokens === 'number' ? { max_tokens: opts.maxTokens } : {}),
             ...(opts.reasoningEffort ? { reasoning_effort: opts.reasoningEffort } : {}),
             messages,
-        }),
-        signal: AbortSignal.timeout(opts.timeoutMs ?? 240_000),
-    });
-    if (!res.ok || !res.body) {
-        await res.text().catch(() => '');
-        throw new Error(`Deep pipeline stage failed (${res.status}). Please try again.`);
-    }
+        },
+        opts.timeoutMs ?? 240_000,
+    );
+    if (!res.body) throw stageError(0);
 
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
@@ -191,26 +245,17 @@ async function zenComplete(
     messages: Array<Record<string, unknown>>,
     opts: ZenStreamOpts = {},
 ): Promise<string> {
-    const res = await fetch(OPENCODE_ZEN_API_URL, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${OPENCODE_ZEN_API_KEY}`,
-        },
-        body: JSON.stringify({
+    const res = await zenFetch(
+        {
             model,
             stream: false,
             temperature: opts.temperature ?? 0,
             ...(typeof opts.maxTokens === 'number' ? { max_tokens: opts.maxTokens } : {}),
             ...(opts.reasoningEffort ? { reasoning_effort: opts.reasoningEffort } : {}),
             messages,
-        }),
-        signal: AbortSignal.timeout(opts.timeoutMs ?? 45_000),
-    });
-    if (!res.ok) {
-        await res.text().catch(() => '');
-        throw new Error(`Deep pipeline check failed (${res.status}).`);
-    }
+        },
+        opts.timeoutMs ?? 45_000,
+    );
     const j = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> };
     return String(j.choices?.[0]?.message?.content ?? '');
 }
@@ -382,22 +427,35 @@ export async function runDeepCodePipeline(
             ? `\n\n<draft_solution>\n${draftSolution.slice(-DEEP_CODE_CONTEXT_CHARS)}\n</draft_solution>\n\nReview the draft above for bugs, missing edge cases, and quality issues, then write the improved final answer — don't just repeat the draft.`
             : '');
 
-    for await (const ev of zenStream(
-        DEEP_CODE_CODER_MODEL,
-        [{ role: 'system', content: coderSystem }, ...messages],
-        {
-            temperature: 0.2,
-            maxTokens: 16_000,
-            reasoningEffort: cfg.coderEffort,
-            // Whatever is left of the shared budget, floored so a degenerate
-            // clock skew can't zero it out.
-            timeoutMs: Math.max(60_000, remainingMs()),
-        },
-    )) {
-        if (ev.kind === 'reasoning') {
-            enqueue({ type: 'thinking', delta: ev.delta });
-        } else {
-            enqueue({ type: 'content', delta: ev.delta });
+    let emittedAnswer = false;
+    try {
+        for await (const ev of zenStream(
+            DEEP_CODE_CODER_MODEL,
+            [{ role: 'system', content: coderSystem }, ...messages],
+            {
+                temperature: 0.2,
+                maxTokens: 16_000,
+                reasoningEffort: cfg.coderEffort,
+                // Whatever is left of the shared budget, floored so a degenerate
+                // clock skew can't zero it out.
+                timeoutMs: Math.max(60_000, remainingMs()),
+            },
+        )) {
+            if (ev.kind === 'reasoning') {
+                enqueue({ type: 'thinking', delta: ev.delta });
+            } else {
+                emittedAnswer = true;
+                enqueue({ type: 'content', delta: ev.delta });
+            }
         }
+    } catch (e) {
+        // The final pass died even after retries. If a supercode draft exists
+        // and nothing visible has streamed yet, ship the draft — a complete
+        // first-attempt answer beats an error card. Anything else rethrows.
+        if (!emittedAnswer && draftSolution.trim()) {
+            enqueue({ type: 'content', delta: draftSolution });
+            return;
+        }
+        throw e;
     }
 }
