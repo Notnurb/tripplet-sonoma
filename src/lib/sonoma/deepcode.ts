@@ -19,6 +19,7 @@ import {
     DEEP_CODE_CODER_MODEL,
 } from '@/lib/ai/llm';
 import { getModelSystemPrompt } from '@/lib/ai/model-prompts';
+import { makeThinkSplitter } from '@/lib/ai/thinkSplitter';
 import type { OpenAIStreamChunk } from './upstream';
 import { DEEP_CODE_DEFAULT_REASONING_LEVEL, type DeepCodeReasoningLevel } from './reasoning-levels';
 
@@ -26,6 +27,13 @@ export { DEEP_CODE_REASONING_LEVELS, DEEP_CODE_DEFAULT_REASONING_LEVEL, isReason
 export type { DeepCodeReasoningLevel } from './reasoning-levels';
 
 const DEEP_CODE_CONTEXT_CHARS = 28_000;
+
+// The coder stage builds whole files/components, and inline chain-of-thought
+// (the model's <think> block) is billed against the same output budget before a
+// single line of the answer is written. A tight cap here is exactly what makes
+// a large build "randomly stop" mid-answer, so give the coder passes all the
+// output headroom the upstream will grant.
+const DEEP_CODE_CODER_MAX_TOKENS = 64_000;
 
 // User-selectable reasoning levels for the DeepCode pipeline. Each tier tunes
 // how many THINK ⇄ ROUTE rounds run, how the shared wall-clock budget (see
@@ -398,7 +406,7 @@ export async function runDeepCodePipeline(
                 [{ role: 'system', content: draftSystem }, ...messages],
                 {
                     temperature: 0.3,
-                    maxTokens: 16_000,
+                    maxTokens: DEEP_CODE_CODER_MAX_TOKENS,
                     reasoningEffort: cfg.coderEffort,
                     timeoutMs: Math.min(draftBudget, Math.max(30_000, remainingMs() - 60_000)),
                 },
@@ -427,14 +435,28 @@ export async function runDeepCodePipeline(
             ? `\n\n<draft_solution>\n${draftSolution.slice(-DEEP_CODE_CONTEXT_CHARS)}\n</draft_solution>\n\nReview the draft above for bugs, missing edge cases, and quality issues, then write the improved final answer — don't just repeat the draft.`
             : '');
 
+    // The coder model interleaves its chain-of-thought into `content` as a
+    // <think>…</think> block (the active backends don't tag it as `reasoning`),
+    // so without this splitter that reasoning leaks into the answer pane. Route
+    // the thinking half to the thinking pane and only stream real answer text as
+    // content — matching the normal Code-workspace path.
+    const coderSplitter = makeThinkSplitter();
     let emittedAnswer = false;
+    const routeCoderContent = (raw: string) => {
+        const { thinking, content } = coderSplitter.feed(raw);
+        if (thinking) enqueue({ type: 'thinking', delta: thinking });
+        if (content) {
+            emittedAnswer = true;
+            enqueue({ type: 'content', delta: content });
+        }
+    };
     try {
         for await (const ev of zenStream(
             DEEP_CODE_CODER_MODEL,
             [{ role: 'system', content: coderSystem }, ...messages],
             {
                 temperature: 0.2,
-                maxTokens: 16_000,
+                maxTokens: DEEP_CODE_CODER_MAX_TOKENS,
                 reasoningEffort: cfg.coderEffort,
                 // Whatever is left of the shared budget, floored so a degenerate
                 // clock skew can't zero it out.
@@ -444,9 +466,16 @@ export async function runDeepCodePipeline(
             if (ev.kind === 'reasoning') {
                 enqueue({ type: 'thinking', delta: ev.delta });
             } else {
-                emittedAnswer = true;
-                enqueue({ type: 'content', delta: ev.delta });
+                routeCoderContent(ev.delta);
             }
+        }
+        // Flush any bytes the splitter was holding back (a partial tag, or a
+        // trailing sliver of answer) so nothing is silently swallowed.
+        const tail = coderSplitter.flush();
+        if (tail.thinking) enqueue({ type: 'thinking', delta: tail.thinking });
+        if (tail.content) {
+            emittedAnswer = true;
+            enqueue({ type: 'content', delta: tail.content });
         }
     } catch (e) {
         // The final pass died even after retries. If a supercode draft exists
