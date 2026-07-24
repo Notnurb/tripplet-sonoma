@@ -12,6 +12,7 @@ import {
     getClient,
     issueTokens,
     rotateRefreshToken,
+    sameRedirectUri,
     verifyPkceS256,
 } from '@/lib/mcp/oauth';
 import { corsJson, preflight } from '@/lib/mcp/http';
@@ -70,7 +71,9 @@ export async function POST(request: NextRequest) {
         if (record.client_id !== clientId) {
             return corsJson({ error: 'invalid_grant', error_description: 'Code was issued to a different client.' }, { status: 400 });
         }
-        if (record.redirect_uri !== redirectUri) {
+        // The code is bound to the registered spelling; a native client sends
+        // back the loopback host it actually listens on. See sameRedirectUri.
+        if (!sameRedirectUri(record.redirect_uri, redirectUri)) {
             return corsJson({ error: 'invalid_grant', error_description: 'redirect_uri mismatch.' }, { status: 400 });
         }
         if (!verifyPkceS256(codeVerifier, record.code_challenge)) {

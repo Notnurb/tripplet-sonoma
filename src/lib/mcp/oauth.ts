@@ -89,6 +89,49 @@ export function verifyPkceS256(verifier: string, challenge: string): boolean {
     return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
+// ── redirect_uri matching ────────────────────────────────────────────────────
+
+/** Loopback hosts a native client may use interchangeably (RFC 8252 §7.3). */
+const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '[::1]']);
+
+/**
+ * True when two redirect_uris are the same registered destination.
+ *
+ * Exact string comparison, with one deliberate exception: for loopback URIs the
+ * host spelling is ignored, so `http://127.0.0.1:9271/callback` and
+ * `http://localhost:9271/callback` match. A native client registers the IP
+ * literal per RFC 8252, but our edge rewrites the `redirect_uri` parameter's
+ * host to `localhost` in transit — the app never sees what the CLI sent, so a
+ * strict compare rejects the client's own registered URI. Everything else
+ * (scheme, port, path) must still match exactly, and this never widens matching
+ * beyond the loopback interface, which is not a redirect target an attacker can
+ * usefully reach.
+ */
+export function sameRedirectUri(a: string, b: string): boolean {
+    if (a === b) return true;
+    let ua: URL, ub: URL;
+    try {
+        ua = new URL(a);
+        ub = new URL(b);
+    } catch {
+        return false;
+    }
+    if (!LOOPBACK_HOSTS.has(ua.hostname) || !LOOPBACK_HOSTS.has(ub.hostname)) return false;
+    return (
+        ua.protocol === ub.protocol &&
+        ua.port === ub.port &&
+        ua.pathname === ub.pathname &&
+        ua.search === ub.search
+    );
+}
+
+/** The entry in `registered` matching `candidate`, or undefined. Returns the
+ * registered spelling so callers can bind the code to a canonical value. */
+export function matchRedirectUri(registered: string[], candidate: string | null | undefined): string | undefined {
+    if (!candidate) return undefined;
+    return registered.find((uri) => sameRedirectUri(uri, candidate));
+}
+
 // ── Clients (Dynamic Client Registration) ───────────────────────────────────
 
 const CLIENT_PREFIX = 'mcp_';

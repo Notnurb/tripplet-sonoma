@@ -7,7 +7,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth/session';
-import { getClient, issueAuthCode, isValidScope, MCP_SCOPE } from '@/lib/mcp/oauth';
+import { getClient, issueAuthCode, isValidScope, matchRedirectUri, MCP_SCOPE } from '@/lib/mcp/oauth';
 
 export const runtime = 'nodejs';
 
@@ -31,7 +31,7 @@ export async function GET(request: NextRequest) {
     const p = request.nextUrl.searchParams;
     const responseType = p.get('response_type');
     const clientId = p.get('client_id');
-    const redirectUri = p.get('redirect_uri');
+    const requestedRedirectUri = p.get('redirect_uri');
     const codeChallenge = p.get('code_challenge');
     const codeChallengeMethod = p.get('code_challenge_method') || 'S256';
     const state = p.get('state');
@@ -40,7 +40,11 @@ export async function GET(request: NextRequest) {
     const client = await getClient(clientId);
     if (!client) return errorPage('Unknown client_id. Register the client first.');
 
-    if (!redirectUri || !client.redirect_uris.includes(redirectUri)) {
+    // Resolve to the spelling the client actually registered, so every later
+    // step (consent, code binding, the redirect itself) uses one canonical
+    // value even if the host reached us rewritten — see sameRedirectUri.
+    const redirectUri = matchRedirectUri(client.redirect_uris, requestedRedirectUri);
+    if (!redirectUri) {
         // Never redirect to an unregistered URI — render an error instead.
         return errorPage('redirect_uri is missing or not registered for this client.');
     }
@@ -52,6 +56,7 @@ export async function GET(request: NextRequest) {
     // Forward the (validated) request to the consent UI, preserving all params.
     const consent = request.nextUrl.clone();
     consent.pathname = '/oauth/consent';
+    consent.searchParams.set('redirect_uri', redirectUri);
     return NextResponse.redirect(consent.toString());
 }
 
@@ -74,13 +79,14 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'invalid_request' }, { status: 400 });
     }
 
-    const { client_id, redirect_uri, code_challenge } = body;
-    if (!client_id || !redirect_uri || !code_challenge) {
+    const { client_id, redirect_uri: requestedRedirectUri, code_challenge } = body;
+    if (!client_id || !requestedRedirectUri || !code_challenge) {
         return NextResponse.json({ error: 'invalid_request' }, { status: 400 });
     }
 
     const client = await getClient(client_id);
-    if (!client || !client.redirect_uris.includes(redirect_uri)) {
+    const redirect_uri = matchRedirectUri(client?.redirect_uris ?? [], requestedRedirectUri);
+    if (!client || !redirect_uri) {
         return NextResponse.json({ error: 'invalid_client' }, { status: 400 });
     }
     if ((body.code_challenge_method || 'S256') !== 'S256') {
