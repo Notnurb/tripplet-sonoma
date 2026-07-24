@@ -14,6 +14,7 @@ const columns = [
             { label: 'Features', href: '/features' },
             { label: 'Chat', href: '/chat' },
             { label: 'Code', href: '/code' },
+            { label: 'Astrocode', href: '/cli' },
             { label: 'Usage', href: '/usage' },
         ],
     },

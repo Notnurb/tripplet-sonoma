@@ -19,6 +19,7 @@ const NAV_LINKS = [
     { label: 'Home', href: '/' },
     { label: 'Chat', href: '/chat' },
     { label: 'Code', href: '/code' },
+    { label: 'Astrocode', href: '/cli' },
     { label: 'Blog', href: '/blog' },
     { label: 'About', href: '/about' },
 ];
