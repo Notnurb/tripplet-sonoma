@@ -1,28 +1,62 @@
-// MCP OAuth 2.1 — Authorization Server helpers.
+// MCP OAuth 2.1 — Authorization Server helpers (stateless).
 //
-// Sonoma acts as its own OAuth 2.1 Authorization Server AND Resource Server for
-// the remote MCP endpoint (/api/mcp). This module owns all token/code/client
-// persistence and the crypto primitives. Everything is stored hashed; raw
-// secrets exist only in transit.
+// Sonoma is its own OAuth 2.1 Authorization Server AND Resource Server for the
+// remote MCP endpoint (/api/mcp). There is NO database here: clients, codes,
+// and tokens are all self-contained JWTs signed with JWT_SECRET — the same
+// mechanism as the site session (see lib/auth/jwt.ts). Nothing to migrate,
+// nothing to provision.
 //
-// Design choices:
-//   • Public clients only (PKCE S256 required) — no client secrets to leak.
-//   • Opaque random tokens stored as SHA-256 hashes — revocable + no key mgmt.
-//   • Codes are single-use (deleted on exchange) and short-lived (60s).
+// Design:
+//   • Public clients only (PKCE S256 required) — no client secrets.
+//   • client_id, auth code, access token, refresh token are each a signed JWT
+//     carrying a `k` (kind) claim, so one kind can never be replayed as another.
+//   • Access tokens are short-lived (1h). Being stateless means they cannot be
+//     revoked before expiry; that is the accepted trade for zero infrastructure.
+//   • The public API below is identical to the previous DB-backed version, so
+//     every route (authorize / token / register / mcp) is unchanged.
 
 import crypto from 'crypto';
-import { query, queryOne } from '@/lib/db/neon';
+import { SignJWT, jwtVerify, type JWTPayload as JosePayload } from 'jose';
+import { env } from '@/lib/env';
 
-export const ACCESS_TOKEN_TTL_SEC = 60 * 60;          // 1 hour
+export const ACCESS_TOKEN_TTL_SEC = 60 * 60;            // 1 hour
 export const REFRESH_TOKEN_TTL_SEC = 60 * 60 * 24 * 30; // 30 days
-export const AUTH_CODE_TTL_SEC = 60;                   // 1 minute
+export const AUTH_CODE_TTL_SEC = 60;                    // 1 minute
+export const CLIENT_TTL_SEC = 60 * 60 * 24 * 365;       // 1 year
 export const MCP_SCOPE = 'mcp';
 export const OFFLINE_ACCESS_SCOPE = 'offline_access';
 export const SUPPORTED_SCOPES = new Set([MCP_SCOPE, OFFLINE_ACCESS_SCOPE]);
 
-/** True if every space-delimited scope in `requested` is one this server
- * actually knows about. Used at authorize-time so a client can't mint a
- * token carrying an arbitrary scope string that later gets trusted verbatim. */
+// ── signing ──────────────────────────────────────────────────────────────────
+
+function key(): Uint8Array {
+    return new TextEncoder().encode(env.JWT_SECRET);
+}
+
+/** Kinds of token this module mints. The claim is checked on every verify so a
+ * refresh token can never be presented as an access token, and so on. */
+type Kind = 'client' | 'code' | 'access' | 'refresh';
+
+async function sign(kind: Kind, claims: JosePayload, ttlSec: number): Promise<string> {
+    return new SignJWT({ ...claims, k: kind })
+        .setProtectedHeader({ alg: 'HS256' })
+        .setIssuedAt()
+        .setExpirationTime(Math.floor(Date.now() / 1000) + ttlSec)
+        .sign(key());
+}
+
+async function verify(kind: Kind, token: string): Promise<JosePayload | null> {
+    try {
+        const { payload } = await jwtVerify(token, key(), { algorithms: ['HS256'] });
+        return payload.k === kind ? payload : null;
+    } catch {
+        return null; // bad signature, wrong kind, or expired — all "not valid"
+    }
+}
+
+// ── scopes ────────────────────────────────────────────────────────────────────
+
+/** True if every space-delimited scope in `requested` is one this server knows. */
 export function isValidScope(requested: string): boolean {
     const scopes = requested.trim().split(/\s+/).filter(Boolean);
     return scopes.length > 0 && scopes.every((s) => SUPPORTED_SCOPES.has(s));
@@ -37,12 +71,7 @@ export function sha256(raw: string): string {
     return crypto.createHash('sha256').update(raw).digest('hex');
 }
 
-function randomToken(bytes = 32): string {
-    return crypto.randomBytes(bytes).toString('base64url');
-}
-
-/** Base URL / issuer for this deployment, derived from the incoming request so
- * it works across localhost, previews, and prod without extra config. */
+/** Base URL / issuer for this deployment. */
 export function baseUrlFrom(request: Request): string {
     const explicit = process.env.NEXT_PUBLIC_APP_URL;
     if (explicit) return explicit.replace(/\/$/, '');
@@ -55,13 +84,14 @@ export function baseUrlFrom(request: Request): string {
 // PKCE S256 verification: BASE64URL(SHA256(verifier)) === challenge.
 export function verifyPkceS256(verifier: string, challenge: string): boolean {
     const computed = crypto.createHash('sha256').update(verifier).digest('base64url');
-    // Constant-time compare on equal-length buffers.
     const a = Buffer.from(computed);
     const b = Buffer.from(challenge);
     return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
 // ── Clients (Dynamic Client Registration) ───────────────────────────────────
+
+const CLIENT_PREFIX = 'mcp_';
 
 export interface OAuthClient {
     client_id: string;
@@ -71,29 +101,23 @@ export interface OAuthClient {
     token_endpoint_auth_method: string;
 }
 
+/** The client_id IS the registration: a signed JWT carrying the approved
+ * redirect_uris, so authorize/token can validate them without any lookup. */
 export async function registerClient(input: {
     client_name?: string;
     redirect_uris: string[];
     grant_types?: string[];
     token_endpoint_auth_method?: string;
 }): Promise<OAuthClient> {
-    const client_id = 'mcp_' + randomToken(16);
     const grant_types = input.grant_types?.length
         ? input.grant_types
         : ['authorization_code', 'refresh_token'];
-    await query(
-        `INSERT INTO oauth_clients (client_id, client_name, redirect_uris, grant_types, token_endpoint_auth_method)
-         VALUES ($1, $2, $3, $4, $5)`,
-        [
-            client_id,
-            input.client_name ?? null,
-            input.redirect_uris,
-            grant_types,
-            input.token_endpoint_auth_method ?? 'none',
-        ],
-    );
+    const token = await sign('client', {
+        ru: input.redirect_uris,
+        cn: input.client_name ?? null,
+    }, CLIENT_TTL_SEC);
     return {
-        client_id,
+        client_id: CLIENT_PREFIX + token,
         client_name: input.client_name ?? null,
         redirect_uris: input.redirect_uris,
         grant_types,
@@ -102,11 +126,19 @@ export async function registerClient(input: {
 }
 
 export async function getClient(clientId: string): Promise<OAuthClient | null> {
-    return queryOne<OAuthClient>(
-        `SELECT client_id, client_name, redirect_uris, grant_types, token_endpoint_auth_method
-         FROM oauth_clients WHERE client_id = $1 LIMIT 1`,
-        [clientId],
-    );
+    if (!clientId.startsWith(CLIENT_PREFIX)) return null;
+    const payload = await verify('client', clientId.slice(CLIENT_PREFIX.length));
+    if (!payload) return null;
+    const ru = Array.isArray(payload.ru)
+        ? (payload.ru as unknown[]).filter((u): u is string => typeof u === 'string')
+        : [];
+    return {
+        client_id: clientId,
+        client_name: typeof payload.cn === 'string' ? payload.cn : null,
+        redirect_uris: ru,
+        grant_types: ['authorization_code', 'refresh_token'],
+        token_endpoint_auth_method: 'none',
+    };
 }
 
 // ── Authorization codes ──────────────────────────────────────────────────────
@@ -120,24 +152,15 @@ export async function issueAuthCode(input: {
     scope: string;
     resource?: string;
 }): Promise<string> {
-    const code = randomToken(32);
-    await query(
-        `INSERT INTO oauth_authorization_codes
-           (code_hash, client_id, user_email, redirect_uri, code_challenge, code_challenge_method, scope, resource, expires_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now() + ($9 || ' seconds')::interval)`,
-        [
-            sha256(code),
-            input.clientId,
-            input.userEmail,
-            input.redirectUri,
-            input.codeChallenge,
-            input.codeChallengeMethod,
-            input.scope,
-            input.resource ?? null,
-            String(AUTH_CODE_TTL_SEC),
-        ],
-    );
-    return code;
+    return sign('code', {
+        sub: input.userEmail,
+        cid: input.clientId,
+        ru: input.redirectUri,
+        cc: input.codeChallenge,
+        ccm: input.codeChallengeMethod,
+        sc: input.scope,
+        res: input.resource ?? null,
+    }, AUTH_CODE_TTL_SEC);
 }
 
 export interface AuthCodeRecord {
@@ -151,18 +174,23 @@ export interface AuthCodeRecord {
     expired: boolean;
 }
 
-/** Atomically consume (delete) an authorization code, returning its record.
- * Single-use: a replayed code returns null because the row is already gone. */
+/** Verify a code. A JWT that verifies is within its 60s window (jose rejects
+ * expired tokens), so `expired` is always false here — the field is retained
+ * for API compatibility. Stateless codes are not single-use, but the 60s TTL
+ * plus mandatory PKCE proof at the token endpoint makes replay impractical. */
 export async function consumeAuthCode(code: string): Promise<AuthCodeRecord | null> {
-    const row = await queryOne<AuthCodeRecord>(
-        `DELETE FROM oauth_authorization_codes
-         WHERE code_hash = $1
-         RETURNING client_id, user_email, redirect_uri, code_challenge,
-                   code_challenge_method, scope, resource,
-                   (expires_at < now()) AS expired`,
-        [sha256(code)],
-    );
-    return row;
+    const p = await verify('code', code);
+    if (!p) return null;
+    return {
+        client_id: String(p.cid ?? ''),
+        user_email: String(p.sub ?? ''),
+        redirect_uri: String(p.ru ?? ''),
+        code_challenge: String(p.cc ?? ''),
+        code_challenge_method: String(p.ccm ?? 'S256'),
+        scope: String(p.sc ?? ''),
+        resource: (p.res as string | null) ?? null,
+        expired: false,
+    };
 }
 
 // ── Access + refresh tokens ──────────────────────────────────────────────────
@@ -180,93 +208,43 @@ export async function issueTokens(input: {
     userEmail: string;
     scope: string;
     resource?: string;
-    /** Root token_hash of this grant's rotation chain. Omit for a brand-new
-     * grant (the new row becomes its own family root); pass the parent row's
-     * family_id when rotating, so reuse detection can revoke the whole chain. */
+    /** Kept for API compatibility; rotation is stateless so it is unused. */
     familyId?: string;
 }): Promise<IssuedTokens> {
-    const accessToken = randomToken(32);
-    const refreshToken = randomToken(32);
-    const tokenHash = sha256(accessToken);
-    await query(
-        `INSERT INTO oauth_access_tokens
-           (token_hash, client_id, user_email, scope, resource, refresh_token_hash,
-            expires_at, refresh_expires_at, family_id)
-         VALUES ($1, $2, $3, $4, $5, $6,
-            now() + ($7 || ' seconds')::interval,
-            now() + ($8 || ' seconds')::interval,
-            $9)`,
-        [
-            tokenHash,
-            input.clientId,
-            input.userEmail,
-            input.scope,
-            input.resource ?? null,
-            sha256(refreshToken),
-            String(ACCESS_TOKEN_TTL_SEC),
-            String(REFRESH_TOKEN_TTL_SEC),
-            input.familyId ?? tokenHash,
-        ],
-    );
+    const common = {
+        sub: input.userEmail,
+        sc: input.scope,
+        res: input.resource ?? null,
+        cid: input.clientId,
+    };
+    const [access_token, refresh_token] = await Promise.all([
+        sign('access', common, ACCESS_TOKEN_TTL_SEC),
+        sign('refresh', common, REFRESH_TOKEN_TTL_SEC),
+    ]);
     return {
-        access_token: accessToken,
-        refresh_token: refreshToken,
+        access_token,
+        refresh_token,
         expires_in: ACCESS_TOKEN_TTL_SEC,
         scope: input.scope,
         token_type: 'Bearer',
     };
 }
 
-/** Revoke every token in a rotation family — called when a refresh token is
- * REUSED (presented again after it was already rotated away), the standard
- * signal that the token was stolen: the legitimate client already rotated
- * past it, so whoever is presenting it now isn't the legitimate client. */
-async function revokeFamily(familyId: string): Promise<void> {
-    await query(`UPDATE oauth_access_tokens SET is_revoked = true WHERE family_id = $1`, [familyId]);
-}
-
-/** Rotate a refresh token: validate it, revoke the old row, issue a new pair.
- * Detects reuse of an already-rotated refresh token and revokes the entire
- * family in response, rather than just rejecting the one replayed request. */
+/** Rotate a refresh token: verify it, confirm it was issued to this client,
+ * and mint a fresh pair. Stateless, so an old refresh token stays valid until
+ * its own 30-day expiry rather than being individually revocable. */
 export async function rotateRefreshToken(
     refreshToken: string,
     clientId: string,
 ): Promise<IssuedTokens | null> {
-    const refreshHash = sha256(refreshToken);
-    const row = await queryOne<{
-        user_email: string; scope: string; resource: string | null;
-        is_revoked: boolean; refresh_expires_at: string; family_id: string | null; token_hash: string;
-    }>(
-        `SELECT user_email, scope, resource, is_revoked, refresh_expires_at, family_id, token_hash
-         FROM oauth_access_tokens
-         WHERE refresh_token_hash = $1
-           AND client_id = $2
-         LIMIT 1`,
-        [refreshHash, clientId],
-    );
-    if (!row) return null; // unknown token — nothing to rotate or revoke
-
-    const familyId = row.family_id ?? row.token_hash;
-
-    if (row.is_revoked) {
-        // Reuse of an already-rotated token: assume compromise, kill the
-        // whole chain so the legitimate holder is forced to re-authenticate.
-        await revokeFamily(familyId);
-        return null;
-    }
-    if (new Date(row.refresh_expires_at) <= new Date()) return null;
-
-    // Revoke this row, then mint a fresh pair carrying the same family_id.
-    await query(
-        `UPDATE oauth_access_tokens SET is_revoked = true WHERE refresh_token_hash = $1`,
-        [refreshHash],
-    );
+    const p = await verify('refresh', refreshToken);
+    if (!p) return null;
+    if (p.cid && p.cid !== clientId) return null; // minted for a different client
     return issueTokens({
         clientId,
-        userEmail: row.user_email,
-        scope: row.scope,
-        resource: row.resource ?? undefined,
-        familyId,
+        userEmail: String(p.sub ?? ''),
+        scope: String(p.sc ?? ''),
+        resource: (p.res as string | null) ?? undefined,
     });
 }
 
@@ -275,22 +253,9 @@ export interface ValidatedToken {
     scope: string;
 }
 
-/** Validate a bearer access token for the MCP resource server. Returns null on
- * missing/expired/revoked. Best-effort last_used_at bump. */
+/** Validate a bearer access token for the MCP resource server. */
 export async function validateAccessToken(accessToken: string): Promise<ValidatedToken | null> {
-    const row = await queryOne<{ user_email: string; scope: string }>(
-        `SELECT user_email, scope
-         FROM oauth_access_tokens
-         WHERE token_hash = $1
-           AND is_revoked = false
-           AND expires_at > now()
-         LIMIT 1`,
-        [sha256(accessToken)],
-    );
-    if (!row) return null;
-    await query(
-        `UPDATE oauth_access_tokens SET last_used_at = now() WHERE token_hash = $1`,
-        [sha256(accessToken)],
-    ).catch(() => { /* best-effort */ });
-    return { userEmail: row.user_email, scope: row.scope };
+    const p = await verify('access', accessToken);
+    if (!p) return null;
+    return { userEmail: String(p.sub ?? ''), scope: String(p.sc ?? '') };
 }

@@ -3,7 +3,6 @@
 // client_id. Public clients only — no secret is issued (PKCE is required).
 
 import { NextRequest } from 'next/server';
-import { isDbConfigured } from '@/lib/db/neon';
 import { registerClient } from '@/lib/mcp/oauth';
 import { corsJson, preflight } from '@/lib/mcp/http';
 import { oauthRegisterLimiter, LIMITS, getRateLimitToken } from '@/lib/security/rate-limit';
@@ -15,9 +14,8 @@ export function OPTIONS() {
 }
 
 export async function POST(request: NextRequest) {
-    if (!isDbConfigured()) {
-        return corsJson({ error: 'server_error', error_description: 'Not configured.' }, { status: 503 });
-    }
+    // Registration is stateless (the client_id is a signed JWT), so there is no
+    // database dependency to gate on.
 
     try {
         await oauthRegisterLimiter.check(LIMITS.oauthRegister, getRateLimitToken(request));

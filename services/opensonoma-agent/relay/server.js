@@ -17,7 +17,10 @@ import https from 'node:https';
 import fs from 'node:fs';
 import { randomUUID, createHmac, timingSafeEqual } from 'node:crypto';
 import { WebSocketServer, WebSocket } from 'ws';
-import { createClient } from '@supabase/supabase-js';
+// NOTE: @supabase/supabase-js is imported lazily in openDb() — it is only
+// needed when SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY are set. A static import
+// here made the relay crash on boot for every deployment that doesn't use
+// Supabase, even though the in-memory store below is a complete fallback.
 
 // ---------------------------------------------------------------------------
 // Protocol constants (kept in sync with opensonoma/protocol.py)
@@ -950,17 +953,40 @@ const RELAY_PUBLIC_URL =
 // sessions are authenticated by verifying the app's HS256 session token.
 TRIPPLET_JWT_SECRET = process.env.TRIPPLET_JWT_SECRET || '';
 
-let db;
-if (SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY) {
+// Choose the persistence layer. Supabase is loaded on demand so the relay has
+// no hard dependency on it when it isn't configured.
+//
+// If Supabase IS configured but the package is missing we exit rather than
+// silently dropping to the in-memory store: that store is dev-trust (it cannot
+// verify a Supabase JWT), so degrading would turn a configured, authenticated
+// relay into an unauthenticated one. Fail loudly instead.
+async function openDb() {
+  if (!(SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY)) {
+    log('In-memory persistence (no Supabase configured).');
+    return createMemoryDb();
+  }
+
+  let createClient;
+  try {
+    ({ createClient } = await import('@supabase/supabase-js'));
+  } catch (e) {
+    log(
+      'FATAL: SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are set, but ' +
+        '@supabase/supabase-js is not installed. Run `npm install` in ' +
+        'services/opensonoma-agent/relay. Refusing to fall back to the ' +
+        'dev-trust in-memory store while Supabase auth is configured.',
+    );
+    process.exit(1);
+  }
+
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
-  db = createSupabaseDb(supabase);
   log('Supabase persistence enabled');
-} else {
-  db = createMemoryDb();
-  log('In-memory persistence (no Supabase configured).');
+  return createSupabaseDb(supabase);
 }
+
+const db = await openDb();
 
 if (TRIPPLET_JWT_SECRET) {
   log('Client auth: Tripplet session JWT (HS256) verification ENABLED.');
