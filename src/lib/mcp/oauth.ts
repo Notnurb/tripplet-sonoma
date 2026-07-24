@@ -48,17 +48,9 @@ async function sign(kind: Kind, claims: JosePayload, ttlSec: number): Promise<st
 async function verify(kind: Kind, token: string): Promise<JosePayload | null> {
     try {
         const { payload } = await jwtVerify(token, key(), { algorithms: ['HS256'] });
-        if (payload.k !== kind) {
-            console.error(`[oauth:diag] kind mismatch: wanted ${kind}, token carries ${String(payload.k)}`);
-            return null;
-        }
-        return payload;
-    } catch (e) {
-        // TEMPORARY: a silent null here made a live 401 undiagnosable. Logs the
-        // reason only — never the token. Remove once the cause is understood.
-        const err = e as { code?: string; message?: string };
-        console.error(`[oauth:diag] verify(${kind}) failed: ${err.code || ''} ${err.message || String(e)} · secretLen=${(env.JWT_SECRET || '').length}`);
-        return null;
+        return payload.k === kind ? payload : null;
+    } catch {
+        return null; // bad signature, wrong kind, or expired — all "not valid"
     }
 }
 
