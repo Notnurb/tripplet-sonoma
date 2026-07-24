@@ -1,0 +1,49 @@
+{
+  "name": "astrocode",
+  "version": "0.1.0",
+  "description": "Astrocode — an agentic coding CLI by Tripplet. Astro 5 Code, Taipei 4, Majuli 4, Suzhou 4.",
+  "type": "module",
+  "bin": {
+    "astrocode": "bin/astrocode.js",
+    "astro": "bin/astrocode.js"
+  },
+  "main": "src/cli/main.js",
+  "exports": {
+    ".": "./src/cli/main.js",
+    "./models": "./src/core/models.js",
+    "./tools": "./src/tools/index.js"
+  },
+  "files": [
+    "bin",
+    "scripts",
+    "src",
+    "README.md",
+    "ASTRO.md",
+    "install.sh",
+    "install.ps1"
+  ],
+  "scripts": {
+    "start": "node bin/astrocode.js",
+    "setup": "node scripts/install.js",
+    "uninstall": "node scripts/install.js --uninstall",
+    "test": "node --test --test-concurrency=2 test/*.test.js",
+    "test:watch": "node --test --watch test/*.test.js",
+    "lint": "node --check bin/astrocode.js"
+  },
+  "engines": {
+    "node": ">=18.17"
+  },
+  "keywords": [
+    "cli",
+    "ai",
+    "agent",
+    "coding",
+    "tui",
+    "astrocode",
+    "tripplet"
+  ],
+  "author": "Tripplet",
+  "license": "MIT",
+  "dependencies": {},
+  "devDependencies": {}
+}

@@ -1,0 +1,85 @@
+/* Serene landing page (/cli) — scoped port of the source project's index.css.
+   Next loads route CSS into the global scope, so every rule here is namespaced
+   to `.cli-root` (or guarded by :has) and can't restyle the rest of the app.
+
+   The source's `* { margin: 0; padding: 0; box-sizing: border-box }` reset is
+   deliberately omitted: Tailwind preflight already does exactly that, and an
+   unlayered `.cli-root *` rule would outrank every layered Tailwind spacing
+   utility (unlayered beats @layer), silently killing `mt-5`, `px-6`, etc. */
+
+body:has(.cli-root) {
+    background: #0a0a0c;
+    overflow-x: hidden;
+}
+
+.cli-root {
+    overflow-x: hidden;
+}
+
+.font-inter {
+    font-family: var(--font-cli-inter), 'Inter', sans-serif;
+}
+
+.font-instrument {
+    font-family: var(--font-cli-instrument), 'Instrument Serif', serif;
+}
+
+.font-cursive {
+    font-family: var(--font-cli-cursive), 'Dancing Script', cursive;
+}
+
+.cli-root .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+}
+
+.cli-root .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+}
+
+.cli-root .liquid-glass {
+    background: rgba(255, 255, 255, 0.01);
+    background-blend-mode: luminosity;
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    border: none;
+    box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.1);
+    position: relative;
+    overflow: hidden;
+}
+
+.cli-root .liquid-glass::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    padding: 1.4px;
+    background: linear-gradient(
+        180deg,
+        rgba(255, 255, 255, 0.45) 0%,
+        rgba(255, 255, 255, 0.15) 20%,
+        rgba(255, 255, 255, 0) 40%,
+        rgba(255, 255, 255, 0) 60%,
+        rgba(255, 255, 255, 0.15) 80%,
+        rgba(255, 255, 255, 0.45) 100%
+    );
+    -webkit-mask:
+        linear-gradient(#fff 0 0) content-box,
+        linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    pointer-events: none;
+}
+
+.cli-root .text-glow {
+    text-shadow:
+        0 0 40px rgba(255, 255, 255, 0.4),
+        0 0 80px rgba(255, 255, 255, 0.2),
+        0 0 120px rgba(255, 255, 255, 0.1);
+}
+
+.cli-root .button-glow {
+    box-shadow:
+        0 0 20px rgba(255, 255, 255, 0.3),
+        0 0 40px rgba(255, 255, 255, 0.1);
+}

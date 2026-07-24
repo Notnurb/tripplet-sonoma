@@ -26,6 +26,7 @@
     "agent": "tsx agent.ts",
     "postinstall": "prisma generate",
     "bundle:opensonoma": "node scripts/bundle-opensonoma.mjs",
+    "bundle:astrocode": "node scripts/bundle-astrocode.mjs",
     "opensonoma:relay": "node services/opensonoma-agent/relay/server.js",
     "check:env": "node scripts/check-env.mjs",
     "check:drift": "node scripts/check-migration-drift.mjs",
@@ -33,7 +34,7 @@
     "test:unit": "vitest run",
     "test:coverage": "vitest run --coverage",
     "test:e2e": "playwright test",
-    "prebuild": "node scripts/check-env.mjs && node scripts/bundle-opensonoma.mjs"
+    "prebuild": "node scripts/check-env.mjs && node scripts/bundle-opensonoma.mjs && node scripts/bundle-astrocode.mjs"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^4.0.15",

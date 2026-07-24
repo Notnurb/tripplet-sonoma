@@ -12,7 +12,8 @@ const CSP = [
     // the Wikipedia Action API directly from the browser (link finder + turbo).
     "connect-src 'self' https://api.groq.com https://opencode.ai https://*.e2b.dev https://*.spline.io wss://*.e2b.dev https://www.clarity.ms https://*.clarity.ms https://vitals.vercel-insights.com https://en.wikipedia.org",
     "frame-src 'self' https://*.spline.io https://*.e2b.dev",
-    "media-src 'self'",
+    // d8j0ntlcm91z4.cloudfront.net: background video on the /cli landing page.
+    "media-src 'self' https://d8j0ntlcm91z4.cloudfront.net",
     "object-src 'none'",
     "base-uri 'self'",
     "form-action 'self'",
@@ -46,11 +47,16 @@ export async function middleware(request: NextRequest) {
         // OpenSonoma installer — must be reachable by an unauthenticated
         // `curl ... | bash`. Covers /installconnect and /installconnect.sh.
         '/installconnect',
+        // Astrocode CLI installer — must be reachable by an unauthenticated
+        // `curl ... | bash`. Covers /installcli and /installcli.sh.
+        '/installcli',
         // Tripplet Sandboxed Linux (v86) runtime + guest image assets.
         '/v86',
         // Sonoma workspace — usable without an account (guest mode).
         // These all render the guest-capable ChatShell backed by /api/sonoma.
         '/chat',
+        // Serene landing page — a public marketing page, no account involved.
+        '/cli',
         '/code',
         '/dev',
         '/hyperagent',
