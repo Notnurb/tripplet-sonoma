@@ -3,13 +3,18 @@
 
 import { NextRequest } from 'next/server';
 import { auth } from '@/lib/auth/session';
+import { resolveBearerUser } from '@/lib/mcp/bearer';
 import { getUsageSummary } from '@/lib/usage/tracker';
 import { usageLimiter, LIMITS, rateLimitResponse, getRateLimitToken } from '@/lib/security/rate-limit';
 
 export const runtime = 'nodejs';
 
 export async function GET(request: NextRequest) {
-    const { userId } = await auth();
+    // Browser sessions authenticate by cookie; the Astrocode CLI holds an MCP
+    // OAuth access token instead. Same numbers either way — /usage in the CLI
+    // must agree with the Settings panel.
+    const cookieUser = await auth();
+    const userId = cookieUser.userId ?? (await resolveBearerUser(request))?.userId ?? null;
     if (!userId) {
         return new Response(JSON.stringify({ error: 'Sign in to view usage.' }), {
             status: 401,
