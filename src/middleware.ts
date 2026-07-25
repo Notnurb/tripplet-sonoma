@@ -50,6 +50,10 @@ export async function middleware(request: NextRequest) {
         // Astrocode CLI installer — must be reachable by an unauthenticated
         // `curl ... | bash`. Covers /installcli and /installcli.sh.
         '/installcli',
+        // Tripplet Work desktop installer — must be reachable by an
+        // unauthenticated `curl ... | bash`. Covers /installwork and
+        // /installwork.sh.
+        '/installwork',
         // Tripplet Sandboxed Linux (v86) runtime + guest image assets.
         '/v86',
         // Sonoma workspace — usable without an account (guest mode).

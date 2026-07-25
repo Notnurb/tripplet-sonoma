@@ -134,6 +134,52 @@ export async function registerClient(meta, { redirectUris = ALL_REDIRECT_URIS, c
   return { clientId: body.client_id, registeredAt: Date.now(), redirectUris };
 }
 
+/**
+ * Is a previously-registered client_id still accepted by this deployment?
+ *
+ * Registration is stateless on the server: the client_id is a JWT signed with
+ * the deployment's secret, so a secret rotation (or a client_id saved against a
+ * different deployment) silently invalidates every stored client_id. The user
+ * then sees "Unknown client_id. Register the client first." in the browser, and
+ * nothing in the CLI ever notices — re-running /login reuses the same dead id
+ * forever. Probing the authorization endpoint is the only check that tests
+ * exactly what the browser is about to do: a live client redirects to consent,
+ * a stale one (or an unregistered redirect_uri) answers 4xx.
+ *
+ * Network failures answer `true`: a probe that could not reach the server is no
+ * evidence the client is bad, and re-registering costs a rate-limit slot.
+ */
+export async function clientIsValid(meta, { clientId, redirectUri = ALL_REDIRECT_URIS[0] }) {
+  const url = authorizeUrl({
+    meta,
+    clientId,
+    redirectUri,
+    challenge: makePkce().challenge,
+    state: 'probe',
+  });
+  // Manual redirects: a live client answers with a redirect (to the consent
+  // page), and following it is pointless here — worse, an auto-approving server
+  // would send us on to the loopback callback and burn a code nobody is waiting
+  // for. Only a host-canonicalising hop (same path, e.g. apex → www) is worth
+  // following, or a stale client_id would be mistaken for that redirect.
+  let target = url;
+  for (let hop = 0; hop < 3; hop++) {
+    let res;
+    try {
+      res = await request(target, { headers: { accept: 'text/html' }, redirect: 'manual', timeout: 8000 });
+    } catch {
+      return true;   // unreachable is not evidence of a bad client
+    }
+    if (res.status >= 400) return false;
+    const location = res.status >= 300 ? res.headers.get('location') : null;
+    if (!location) return true;
+    const next = new URL(location, target);
+    if (next.pathname !== new URL(target).pathname) return true;   // reached consent
+    target = next.toString();
+  }
+  return true;
+}
+
 // ── PKCE ────────────────────────────────────────────────────────────────────
 
 export function makePkce() {

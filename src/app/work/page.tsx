@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { ArrowRight, Check, Download, Loader2 } from 'lucide-react';
+import { ArrowRight, Check, Download, Loader2, Terminal } from 'lucide-react';
 import { GlassNav } from '@/components/ui/glass-nav';
 
 const EASE = 'cubic-bezier(0.76,0,0.24,1)';
@@ -10,6 +10,7 @@ const VIDEO_SRC =
     'https://d8j0ntlcm91z4.cloudfront.net/user_38xzZboKViGWJOttwIXH07lWA1P/hf_20260622_204103_f607742e-09da-4cf5-bb06-4e67b0a531de.mp4';
 
 const DMG_URL = '/TrippletWork.dmg';
+const INSTALL_CMD = 'curl -fsSL https://www.tripplet.lol/installwork | bash';
 
 type Platform = 'mac' | 'windows' | 'linux' | 'other';
 
@@ -101,6 +102,63 @@ function WaitlistForm({ platform }: { platform: Platform }) {
     );
 }
 
+/**
+ * Mac install. The terminal one-liner is offered alongside the disk image
+ * because a browser download tags the app with com.apple.quarantine, and
+ * Tripplet Work is ad-hoc signed rather than notarized — so the .dmg route
+ * shows a Gatekeeper warning you have to click through, and the script route
+ * shows nothing at all.
+ */
+function MacDownload() {
+    const [copied, setCopied] = useState(false);
+
+    const copy = async () => {
+        try {
+            await navigator.clipboard.writeText(INSTALL_CMD);
+            setCopied(true);
+            setTimeout(() => setCopied(false), 2000);
+        } catch {
+            /* clipboard blocked — the command is on screen to select by hand */
+        }
+    };
+
+    return (
+        <div className="flex w-full max-w-xl flex-col items-center gap-4">
+            <div className="flex flex-col items-center gap-3 sm:flex-row">
+                <a
+                    href={DMG_URL}
+                    download
+                    className="group inline-flex items-center gap-2 rounded-full bg-white px-7 py-3 text-sm font-medium text-black transition-opacity duration-200 hover:opacity-90"
+                >
+                    <Download className="h-4 w-4 transition-transform duration-200 group-hover:translate-y-0.5" />
+                    Download for Mac
+                </a>
+                <button
+                    type="button"
+                    onClick={copy}
+                    title="Copy the install command"
+                    className="inline-flex items-center gap-2 rounded-full border border-white/40 px-5 py-3 font-mono text-xs text-white/90 transition-colors duration-200 hover:border-white/60 hover:bg-white/10"
+                >
+                    {copied ? (
+                        <>
+                            <Check className="h-3.5 w-3.5" /> Copied
+                        </>
+                    ) : (
+                        <>
+                            <Terminal className="h-3.5 w-3.5" /> Install via terminal
+                        </>
+                    )}
+                </button>
+            </div>
+            <p className="max-w-md text-xs font-light leading-relaxed text-white/55">
+                Downloading the .dmg? macOS will warn that it can&apos;t verify the developer —
+                right-click the app and choose <span className="text-white/80">Open</span>. The
+                terminal command skips that.
+            </p>
+        </div>
+    );
+}
+
 export default function WorkPage() {
     const [platform, setPlatform] = useState<Platform | null>(null);
 
@@ -145,14 +203,7 @@ export default function WorkPage() {
                         {needsWaitlist ? (
                             <WaitlistForm platform={platform as Platform} />
                         ) : (
-                            <a
-                                href={DMG_URL}
-                                download
-                                className="group inline-flex items-center gap-2 rounded-full bg-white px-7 py-3 text-sm font-medium text-black transition-opacity duration-200 hover:opacity-90"
-                            >
-                                <Download className="h-4 w-4 transition-transform duration-200 group-hover:translate-y-0.5" />
-                                Download for Mac
-                            </a>
+                            <MacDownload />
                         )}
                     </div>
                 </div>

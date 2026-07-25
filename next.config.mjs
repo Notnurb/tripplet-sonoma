@@ -37,6 +37,7 @@ const nextConfig = {
   outputFileTracingIncludes: {
     '/installconnect': ['./public/installconnect.sh'],
     '/installcli': ['./public/installcli.sh'],
+    '/installwork': ['./public/installwork.sh'],
     // Pyodide is require()'d inside an eval'd worker-thread string (see
     // src/lib/python/run.ts), so the file tracer can't see it — include its
     // runtime files explicitly for the routes that execute Python.

@@ -11,7 +11,7 @@
  */
 
 import {
-  DEFAULT_BASE_URL, SCOPES, discover, registerClient, makePkce, makeState,
+  DEFAULT_BASE_URL, SCOPES, discover, registerClient, clientIsValid, makePkce, makeState,
   authorizeUrl, exchangeCode, startLoopback, parsePastedCode, checkState,
   fetchUserInfo, AuthError,
 } from './oauth.js';
@@ -38,8 +38,13 @@ export async function login({
   const meta = await discover(baseUrl);
 
   // Reuse the client_id we registered last time for this deployment; the
-  // redirect URIs are fixed, so there is nothing to re-register.
+  // redirect URIs are fixed, so there is nothing to re-register — but only if
+  // the server still accepts it. Client registrations are stateless JWTs, so a
+  // secret rotation on the deployment invalidates every stored client_id, and
+  // reusing one unchecked sends the user to a browser page that just says
+  // "Unknown client_id" with no way out (see clientIsValid).
   let clientId = knownClient(baseUrl, file ? { file } : undefined);
+  if (clientId && !(await clientIsValid(meta, { clientId }))) clientId = null;
   if (!clientId) {
     const reg = await registerClient(meta);
     clientId = reg.clientId;

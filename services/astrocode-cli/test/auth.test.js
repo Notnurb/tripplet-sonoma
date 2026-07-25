@@ -492,6 +492,26 @@ test('the client_id is registered once and reused on the next login',
     } finally { mock.close(); }
   }));
 
+test('a stored client_id the server no longer knows is re-registered',
+  () => withTempDir(async (dir) => {
+    const mock = await startMockServer();
+    const file = path.join(dir, 'auth.json');
+    try {
+      const first = await login({ baseUrl: mock.base, file, openBrowser: false, onReady: ({ url }) => { actAsBrowser(url); } });
+      assert.equal(mock.state.registrations, 1);
+
+      // What a secret rotation looks like from the client's side: the saved
+      // client_id still exists on disk, the server has never heard of it.
+      mock.clients.delete(first.auth.clientId);
+
+      const second = await login({ baseUrl: mock.base, file, openBrowser: false, onReady: ({ url }) => { actAsBrowser(url); } });
+      assert.equal(mock.state.registrations, 2, 'registered again');
+      assert.notEqual(second.auth.clientId, first.auth.clientId);
+      assert.ok(second.auth.accessToken);
+      assert.equal(knownClient(mock.base, { file }), second.auth.clientId);
+    } finally { mock.close(); }
+  }));
+
 test('a cancelled sign-in rejects cleanly and stores nothing', () => withTempDir(async (dir) => {
   const mock = await startMockServer({ autoApprove: false });
   const file = path.join(dir, 'auth.json');
