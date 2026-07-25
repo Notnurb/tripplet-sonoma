@@ -120,10 +120,12 @@ export function buildSonomaSystemPrompt(
         : '';
     const machineNote = mentionedMachine
         ? '\n\n## Skill: Paired machine — ' + mentionedMachine.machineName + '\n' +
-          `The user @mentioned their paired machine "${mentionedMachine.machineName}" (device_id: ${mentionedMachine.deviceId}) in this message. ` +
-          'You may call `run_on_machine` with that exact device_id to run real shell commands on it. ' +
-          'The user is always shown a Yes / Always Accept / No permission prompt before anything actually runs — do not tell them you ran something unless the tool result confirms it executed. ' +
-          'Only target this device_id; never invent one.'
+          `You DO have real, working shell/terminal access to the user's own computer right now, via the \`run_on_machine\` tool — it is connected and paired: "${mentionedMachine.machineName}" (device_id: ${mentionedMachine.deviceId}). ` +
+          'This is automatically available for the whole conversation — the user does NOT need to @mention it again. ' +
+          'Never tell the user you lack shell/terminal/file-system access, that you "don\'t have a tool for that", or that you can\'t run commands on their machine — you can, right now, via `run_on_machine`. ' +
+          'Call it with that exact device_id whenever running a real command would answer their request (checking files, running a build, inspecting the system, etc.) — do not just describe what a command would do. ' +
+          'The user is shown a Yes / Always Accept / No permission prompt before anything actually runs (this is expected and not a limitation of yours) — report the real tool result once it comes back rather than assuming success. ' +
+          'Only ever target this exact device_id; never invent one.'
         : '';
     return identity + '\n\n' + dateNote + '\n\n' + base + pageNote + browseNote + reasonNote + codeNote + deepCodeNote + webBundleNote + sandboxNote + machineNote + memoryNote + pastChatsNote + connectorsNote;
 }

@@ -205,12 +205,16 @@ export default function SonomaChatShell({ page = 'chat', conversationId, transpa
             .then((r) => (r.ok ? r.json() : { machines: [] }))
             .then((data) => {
                 const list = Array.isArray(data.machines) ? data.machines : [];
-                setPairedMachines(
-                    list.map((m: { deviceId: string; machineName: string; status: string; online: boolean; lastSeenAt: string | null }) => ({
-                        deviceId: m.deviceId,
-                        machineName: m.machineName,
-                    })),
-                );
+                const simplified = list.map((m: { deviceId: string; machineName: string; status: string; online: boolean; lastSeenAt: string | null }) => ({
+                    deviceId: m.deviceId,
+                    machineName: m.machineName,
+                }));
+                setPairedMachines(simplified);
+                // Auto-attach so the user doesn't have to @mention every
+                // message — only when nothing is attached yet (an explicit
+                // @mention or "remove" from the composer still wins) and
+                // there's exactly one paired machine to default to.
+                setMentionedMachine((prev) => (prev ? prev : simplified.length === 1 ? simplified[0] : prev));
             })
             .catch(() => { /* signed out / relay unreachable — composer just shows no machines */ });
     }, []);
@@ -643,7 +647,9 @@ export default function SonomaChatShell({ page = 'chat', conversationId, transpa
         setMessages(next);
         setDraft('');
         setUploaded([]);
-        setMentionedMachine(null);
+        // mentionedMachine deliberately persists across turns — auto-attached
+        // or @mentioned once, it stays available for the rest of the chat
+        // instead of requiring a fresh @mention every message.
 
         await runAgent(next.slice(0, -1), assistantMessage.id);
     }, [busy, draft, uploaded, messages, model, runAgent, createConversation, page, conversationId, forceEnabled]);
