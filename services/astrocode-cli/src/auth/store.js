@@ -81,12 +81,19 @@ export function describeAuth(auth) {
 
 /**
  * A usable access token, refreshing first if it is close to expiry.
+ *
+ * `forceRefresh` skips the local expiry check and refreshes unconditionally —
+ * used when a request comes back 401 even though our own clock thought the
+ * token was still good (clock skew, an early server-side revocation, or a
+ * token minted just before a restart). Without this, a rejected-but-locally-
+ * fresh-looking token would surface as "you're signed out" and demand a full
+ * re-login even though a perfectly good refresh token is sitting right there.
  * @returns {Promise<{token: string|null, auth: AuthRecord|null, refreshed: boolean, error?: string}>}
  */
-export async function getAccessToken({ file = AUTH_PATH } = {}) {
+export async function getAccessToken({ file = AUTH_PATH, forceRefresh = false } = {}) {
   const auth = loadAuth({ file });
   if (!auth) return { token: null, auth: null, refreshed: false, error: 'not signed in' };
-  if (!isExpired(auth)) return { token: auth.accessToken, auth, refreshed: false };
+  if (!forceRefresh && !isExpired(auth)) return { token: auth.accessToken, auth, refreshed: false };
 
   if (!auth.refreshToken) {
     return { token: null, auth, refreshed: false, error: 'session expired — run /login again' };

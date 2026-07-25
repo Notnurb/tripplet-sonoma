@@ -113,24 +113,20 @@ async function readJsonSafe(res) {
 }
 
 /**
- * A fetch that is already authenticated, already timed out, and already
- * translated into ApiError. Returns the raw Response on success so a caller can
- * stream it.
+ * One request, with the current access token. Broken out of apiFetch so a 401
+ * can be retried once with a forced refresh rather than immediately telling
+ * the user they are signed out.
  */
-export async function apiFetch(pathname, {
-  method = 'GET',
-  body,
-  signal,
-  timeout = DEFAULT_TIMEOUT_MS,
-  accept = 'application/json',
-  file,
-} = {}) {
-  const { token, auth, error } = await getAccessToken(file ? { file } : undefined);
+async function attempt(pathname, { method, body, signal, timeout, accept, file, forceRefresh }) {
+  const { token, auth, error } = await getAccessToken({ ...(file ? { file } : {}), forceRefresh });
   if (!token) {
-    throw new ApiError(error || 'not signed in', {
-      code: error && /expired/i.test(error) ? 'unauthorized' : 'not_signed_in',
-      hint: 'Run /login to sign in to Tripplet.',
-    });
+    return {
+      unauthorized: true,
+      error: new ApiError(error || 'not signed in', {
+        code: error && /expired/i.test(error) ? 'unauthorized' : 'not_signed_in',
+        hint: 'Run /login to sign in to Tripplet.',
+      }),
+    };
   }
 
   const declared = trimSlash(auth?.baseUrl || DEFAULT_BASE_URL);
@@ -164,32 +160,80 @@ export async function apiFetch(pathname, {
       try { canonical.set(declared, trimSlash(new URL(landed.url).origin)); } catch { /* keep the declared one */ }
     }
   } catch (err) {
-    if (err instanceof ApiError) throw err;
-    if (signal?.aborted) throw new ApiError('cancelled', { code: 'aborted' });
+    if (err instanceof ApiError) return { error: err };
+    if (signal?.aborted) return { error: new ApiError('cancelled', { code: 'aborted' }) };
     if (err.name === 'AbortError') {
-      throw new ApiError(`${url} timed out`, { code: 'timeout', hint: 'The server took too long to respond.' });
+      return { error: new ApiError(`${url} timed out`, { code: 'timeout', hint: 'The server took too long to respond.' }) };
     }
-    throw new ApiError(`Cannot reach ${base}: ${err.message}`, {
-      code: 'unreachable',
-      hint: 'Check your connection, or /login --url <base> to switch deployment.',
-    });
+    return {
+      error: new ApiError(`Cannot reach ${base}: ${err.message}`, {
+        code: 'unreachable',
+        hint: 'Check your connection, or /login --url <base> to switch deployment.',
+      }),
+    };
   } finally {
     clearTimeout(timer);
     signal?.removeEventListener('abort', onAbort);
   }
 
+  if (res.ok) return { res };
+  if (res.status === 401) return { unauthorized: true, auth, res };
+  return { res };
+}
+
+/**
+ * A fetch that is already authenticated, already timed out, and already
+ * translated into ApiError. Returns the raw Response on success so a caller can
+ * stream it.
+ *
+ * A 401 does not immediately mean "signed out": our local clock may still
+ * think the access token is fresh (skew, a token minted moments before this
+ * process started) even though the server has already moved on. So a 401
+ * triggers exactly one forced refresh-and-retry before we tell the user their
+ * session is gone — as long as we actually have a refresh token to try. This
+ * is what keeps a real session alive across restarts without ever needing a
+ * manual re-login; only an actually-dead refresh token (or /logout) ends it.
+ */
+export async function apiFetch(pathname, {
+  method = 'GET',
+  body,
+  signal,
+  timeout = DEFAULT_TIMEOUT_MS,
+  accept = 'application/json',
+  file,
+} = {}) {
+  const opts = { method, body, signal, timeout, accept, file };
+  const standardUnauthorized = () => new ApiError('Your Tripplet session is no longer valid.', {
+    code: 'unauthorized',
+    status: 401,
+    hint: 'Run /login to sign in again.',
+  });
+
+  let outcome = await attempt(pathname, { ...opts, forceRefresh: false });
+
+  if (outcome.unauthorized) {
+    if (!outcome.auth?.refreshToken) {
+      // Nothing to refresh: either never signed in (attempt() already built
+      // a precise not_signed_in/unauthorized error for that) or the server
+      // rejected us and there is no refresh token on file to try instead.
+      throw outcome.error || standardUnauthorized();
+    }
+    // We have a refresh token — one forced refresh-and-retry before telling
+    // the user their session is gone. Whatever goes wrong on the retry
+    // (the refresh call itself failing, or the fresh token still 401ing) is
+    // reported as the same standard message: the specifics are not
+    // actionable, "sign in again" is.
+    outcome = await attempt(pathname, { ...opts, forceRefresh: true });
+    if (outcome.unauthorized) throw standardUnauthorized();
+  }
+  if (outcome.error) throw outcome.error;
+
+  const res = outcome.res;
   if (res.ok) return res;
 
   const payload = await readJsonSafe(res);
   const detail = payload?.error_description || payload?.error || `HTTP ${res.status}`;
 
-  if (res.status === 401) {
-    throw new ApiError('Your Tripplet session is no longer valid.', {
-      code: 'unauthorized',
-      status: 401,
-      hint: 'Run /login to sign in again.',
-    });
-  }
   if (res.status === 429 && payload?.code === 'usage_limit') {
     throw new ApiError(detail, {
       code: 'usage_limit',

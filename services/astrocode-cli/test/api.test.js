@@ -103,6 +103,73 @@ test('apiFetch maps each failure status to a distinct code', () => withTempDir(a
   }
 }));
 
+test('a 401 the local clock did not predict is refreshed and retried transparently', () => withTempDir(async (dir) => {
+  // This is the "stays signed in unless you /logout" contract: our own
+  // expiresAt check can be wrong (clock skew, a token minted moments before
+  // the process started), but as long as a refresh token is on file, a 401
+  // must never be the end of the story — it should refresh and retry once,
+  // silently, rather than making the user run /login again.
+  const file = await authFile(dir);
+  let resourceCalls = 0;
+
+  const impl = async (url, init) => {
+    if (url.endsWith('/.well-known/oauth-authorization-server')) {
+      return { ok: false, status: 404, text: async () => '' };
+    }
+    if (url.endsWith('/api/oauth/token')) {
+      assert.equal(new URLSearchParams(init.body).get('refresh_token'), 'ref_abc');
+      return jsonResponse(200, {
+        access_token: 'tok_fresh',
+        refresh_token: 'ref_fresh',
+        expires_in: 3600,
+        scope: 'mcp offline_access',
+        token_type: 'Bearer',
+      });
+    }
+    resourceCalls += 1;
+    if (resourceCalls === 1) {
+      assert.equal(init.headers.authorization, 'Bearer tok_abc', 'first try uses the token already on disk');
+      return jsonResponse(401, {});
+    }
+    assert.equal(init.headers.authorization, 'Bearer tok_fresh', 'the retry uses the freshly refreshed token');
+    return jsonResponse(200, { ok: true });
+  };
+
+  const res = await withFetch(impl, () => apiFetch('/api/usage', { file }));
+  assert.equal(res.status, 200);
+  assert.equal(resourceCalls, 2, 'the resource endpoint was retried exactly once, not looped');
+
+  const stored = JSON.parse(await fs.readFile(file, 'utf8'));
+  assert.equal(stored.accessToken, 'tok_fresh', 'the refreshed session is persisted for the next process');
+  assert.equal(stored.refreshToken, 'ref_fresh', 'the rotated refresh token is persisted too');
+}));
+
+test('a 401 with a genuinely dead refresh token still reports unauthorized, once', () => withTempDir(async (dir) => {
+  const file = await authFile(dir);
+  let resourceCalls = 0;
+  let tokenCalls = 0;
+
+  const impl = async (url) => {
+    if (url.endsWith('/.well-known/oauth-authorization-server')) {
+      return { ok: false, status: 404, text: async () => '' };
+    }
+    if (url.endsWith('/api/oauth/token')) {
+      tokenCalls += 1;
+      return jsonResponse(400, { error: 'invalid_grant' });
+    }
+    resourceCalls += 1;
+    return jsonResponse(401, {});
+  };
+
+  const err = await withFetch(impl, () =>
+    apiFetch('/api/usage', { file }).then(() => null, (e) => e));
+
+  assert.ok(err instanceof ApiError);
+  assert.equal(err.code, 'unauthorized');
+  assert.equal(resourceCalls, 1, 'no infinite retry loop once the refresh itself fails');
+  assert.equal(tokenCalls, 1, 'exactly one refresh attempt, not a retry storm');
+}));
+
 test('a usage_limit error carries the scope and reset time', () => withTempDir(async (dir) => {
   const file = await authFile(dir);
   const err = await withFetch(
