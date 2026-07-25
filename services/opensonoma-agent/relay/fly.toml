@@ -1,0 +1,19 @@
+app = "sonoma-relay"
+primary_region = "iad"
+
+[build]
+
+[env]
+  PORT = "8080"
+  RELAY_PUBLIC_URL = "wss://relay.getsonoma.lol/ws"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"

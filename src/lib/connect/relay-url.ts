@@ -40,7 +40,7 @@ export function defaultRelayUrl(): string {
     const configured = process.env.OPENSONOMA_RELAY_URL?.trim();
     if (configured) return configured;
     return process.env.NODE_ENV === 'production'
-        ? 'wss://relay.tripplet.ai/ws'
+        ? 'wss://relay.getsonoma.lol/ws'
         : 'ws://127.0.0.1:8080/ws';
 }
 

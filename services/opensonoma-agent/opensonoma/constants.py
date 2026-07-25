@@ -38,7 +38,7 @@ WORK_DIR = CONFIG_DIR / "work"                   # scratch dir for cpp/python op
 # Networking / relay
 # ---------------------------------------------------------------------------
 DEFAULT_RELAY_URL = os.environ.get(
-    "OPENSONOMA_RELAY_URL", "wss://relay.tripplet.ai/ws"
+    "OPENSONOMA_RELAY_URL", "wss://relay.getsonoma.lol/ws"
 )
 
 # Loopback hosts where a plaintext ws:// relay is acceptable (local dev only).

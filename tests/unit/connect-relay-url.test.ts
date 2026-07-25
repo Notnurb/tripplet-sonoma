@@ -58,7 +58,7 @@ describe('defaultRelayUrl', () => {
 
     it('defaults to the managed TLS relay in production', () => {
         (process.env as Record<string, string | undefined>).NODE_ENV = 'production';
-        expect(defaultRelayUrl()).toBe('wss://relay.tripplet.ai/ws');
+        expect(defaultRelayUrl()).toBe('wss://relay.getsonoma.lol/ws');
         // ...and the production default satisfies the encryption policy.
         expect(resolveRelayUrl(defaultRelayUrl()).secure).toBe(true);
     });

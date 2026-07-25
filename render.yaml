@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: sonoma-relay
+    runtime: docker
+    rootDir: services/opensonoma-agent/relay
+    dockerfilePath: ./Dockerfile
+    plan: free
+    envVars:
+      - key: PORT
+        value: 8080
+      - key: RELAY_PUBLIC_URL
+        value: wss://relay.getsonoma.lol/ws
