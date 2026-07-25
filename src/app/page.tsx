@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 import { Instrument_Serif } from 'next/font/google';
 import { ArrowRight, Globe } from 'lucide-react';
 import { TabVisibility } from '@/components/ui/tab-visibility';
-import { GlassNav } from '@/components/ui/glass-nav';
+import { GlassNav, NAV_LINKS as GLASS_NAV_LINKS } from '@/components/ui/glass-nav';
 import VideoBackdrop from '@/components/Sonoma/VideoBackdrop';
 import SonomaComposer from '@/components/Sonoma/Composer';
 import OutageNotice from '@/components/Sonoma/OutageNotice';
@@ -25,13 +25,8 @@ const instrumentSerif = Instrument_Serif({
 
 const DISPLAY_FONT = { fontFamily: "var(--font-instrument-serif), 'Instrument Serif', serif" };
 
-const NAV_LINKS = [
-    { label: 'Home', href: '/' },
-    { label: 'Chat', href: '/chat' },
-    { label: 'Code', href: '/code' },
-    { label: 'Blog', href: '/blog' },
-    { label: 'About', href: '/about' },
-];
+// Footer destinations come from the nav so the two can't drift apart.
+const NAV_LINKS = GLASS_NAV_LINKS;
 
 const MODELS = [
     {

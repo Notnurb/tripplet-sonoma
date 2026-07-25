@@ -9,6 +9,9 @@
     --font-sans: var(--font-geist), var(--font-outfit), ui-sans-serif, system-ui, sans-serif;
     --font-serif: var(--font-newsreader), ui-serif, "Iowan Old Style", "Apple Garamond", "Baskerville", serif;
     --font-mono: var(--font-jetbrains), ui-monospace, "SF Mono", "Cascadia Mono", "Roboto Mono", monospace;
+    /* /work (Atelier hero). Loaded per-route via next/font in src/app/work/layout.tsx
+       rather than a Google Fonts <link>, which the CSP's font-src 'self' blocks. */
+    --font-instrument-serif: var(--font-instrument), "Instrument Serif", serif;
 }
 
 @theme inline {

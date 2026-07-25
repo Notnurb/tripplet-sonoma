@@ -15,10 +15,13 @@ import { MenuToggleIcon } from '@/components/ui/menu-toggle-icon';
 import { cn } from '@/lib/utils';
 import { APP_NAME } from '@/lib/branding';
 
-const NAV_LINKS = [
+// Exported so the landing footer lists exactly what the nav lists — one place
+// to add a destination rather than two that drift.
+export const NAV_LINKS = [
     { label: 'Home', href: '/' },
     { label: 'Chat', href: '/chat' },
     { label: 'Code', href: '/code' },
+    { label: 'Work', href: '/work' },
     { label: 'Astrocode', href: '/cli' },
     { label: 'Blog', href: '/blog' },
     { label: 'About', href: '/about' },

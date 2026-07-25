@@ -74,6 +74,8 @@ export async function middleware(request: NextRequest) {
         '/sitemap',
         '/sitemap.txt',
         '/robots.txt',
+        // Atelier hero — a standalone public landing page, no account involved.
+        '/work',
         // Triplepedia is a public knowledge base: reading, searching and
         // exploring articles must not require an account (its GET APIs are
         // already public + rate-limited). Import tools (/tgrablockbatch)
@@ -128,7 +130,10 @@ async function hasValidAuthCookie(request: NextRequest): Promise<boolean> {
 
 export const config = {
     matcher: [
-        '/((?!_next|[^?]*\\.(?:html?|css|sh|gz|tgz|js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|docx?|xlsx?|zip|webmanifest|mp4|m4v|webm|mov)).*)',
+        // dmg: the Tripplet Work desktop download (/TrippletWork.dmg) is a
+        // static asset — without it here the middleware bounces signed-out
+        // visitors to /login instead of serving the file.
+        '/((?!_next|[^?]*\\.(?:html?|css|sh|gz|tgz|js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|docx?|xlsx?|zip|dmg|webmanifest|mp4|m4v|webm|mov)).*)',
         '/(api|trpc)(.*)',
     ],
 }
