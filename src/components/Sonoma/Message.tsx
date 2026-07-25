@@ -285,6 +285,12 @@ function ActivityLabel({ a }: { a: SonomaActivity }) {
             return <>Running Python</>;
         case 'run_bash':
             return <>Running bash</>;
+        case 'search_past_chats': {
+            const q = String(a.args.query ?? '').trim();
+            return q
+                ? <>Searching your past chats for <code style={{ fontFamily: 'var(--font-mono)' }}>&ldquo;{q}&rdquo;</code></>
+                : <>Looking through your past chats</>;
+        }
         case 'mermaid_diagram':
             return <>Rendering diagram {a.args.title ? `· ${String(a.args.title)}` : ''}</>;
         default:

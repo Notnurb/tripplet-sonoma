@@ -11,7 +11,7 @@ import {
     searchMemories,
     updateMemory,
 } from '@/lib/db/user-memory';
-import { searchLimiter, LIMITS, rateLimitResponse, getRateLimitToken } from '@/lib/security/rate-limit';
+import { memoryLimiter, LIMITS, rateLimitResponse, getRateLimitToken, MEMORY_RATE_LIMIT_MESSAGE } from '@/lib/security/rate-limit';
 
 export const runtime = 'nodejs';
 
@@ -70,9 +70,9 @@ export async function POST(request: NextRequest) {
 
     const limitToken = getRateLimitToken(request, userId);
     try {
-        await searchLimiter.check(LIMITS.search, limitToken);
+        await memoryLimiter.check(LIMITS.memory, limitToken);
     } catch {
-        return rateLimitResponse();
+        return rateLimitResponse(MEMORY_RATE_LIMIT_MESSAGE);
     }
 
     let body: { action?: unknown; content?: unknown; tags?: unknown; id?: unknown; query?: unknown; source?: unknown };
@@ -147,9 +147,9 @@ export async function GET(request: NextRequest) {
 
     const limitToken = getRateLimitToken(request, userId);
     try {
-        await searchLimiter.check(LIMITS.search, limitToken);
+        await memoryLimiter.check(LIMITS.memory, limitToken);
     } catch {
-        return rateLimitResponse();
+        return rateLimitResponse(MEMORY_RATE_LIMIT_MESSAGE);
     }
 
     const { searchParams } = new URL(request.url);

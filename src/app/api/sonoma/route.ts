@@ -56,6 +56,14 @@ interface RouteBody {
     // exchange, big-pickle autonomously extracts new durable facts about the
     // user in the background (src/lib/memory/learner.ts).
     memory?: boolean;
+    // Past Chats skill (settings toggle, default on). When enabled for a
+    // signed-in user, the `search_past_chats` tool lets the model search that
+    // user's own earlier conversations (src/lib/db/conversation-search.ts).
+    pastChats?: boolean;
+    // The conversation this request belongs to, when the client knows it —
+    // excluded from past-chat search so the model doesn't "recall" the thread
+    // it is already reading.
+    conversationId?: string;
     page?: SonomaPage;
     // Persona id (e.g. 'astro-5', 'tura-3'). Selects the upstream backend.
     model?: string;
@@ -93,12 +101,19 @@ export async function POST(req: NextRequest) {
     } catch {
         return new Response('Bad JSON', { status: 400 });
     }
-    const { messages, reason = false, browse = false, code = false, deepCode = false, sandbox = false, memory = true, page = 'chat', model, dev } = body;
+    const { messages, reason = false, browse = false, code = false, deepCode = false, sandbox = false, memory = true, pastChats = true, conversationId, page = 'chat', model, dev } = body;
     const deepCodeLevel = isReasoningLevel(body.deepCodeLevel)
         ? body.deepCodeLevel
         : DEEP_CODE_DEFAULT_REASONING_LEVEL;
-    // The run_bash tool is only offered when the Sandboxed Linux skill is on.
-    const builtinTools = sandbox ? SONOMA_TOOLS : SONOMA_TOOLS.filter((t) => t.function.name !== 'run_bash');
+    // Tool set trimmed to the enabled skills: run_bash only with Sandboxed
+    // Linux on, search_past_chats only when the Past Chats skill is on AND
+    // there is a signed-in account whose history we could search.
+    const pastChatsOn = pastChats && !!userId;
+    const builtinTools = SONOMA_TOOLS.filter((t) => {
+        if (t.function.name === 'run_bash') return sandbox;
+        if (t.function.name === 'search_past_chats') return pastChatsOn;
+        return true;
+    });
     // Connector (Composio) tools for the apps this user has linked in
     // Settings → Connectors. Guests and un-configured deploys get none, and
     // any Composio failure degrades to none — chat must never block on it.
@@ -232,7 +247,7 @@ export async function POST(req: NextRequest) {
             // guardrails), so they are dropped — same policy as the DeepCode
             // pipeline. The app's own client never sends them anyway.
             const history: Array<Record<string, unknown>> = [
-                { role: 'system', content: buildSonomaSystemPrompt(page, reason, browse, code, model, deepCode, sandbox, composio?.apps ?? [], userMemories) },
+                { role: 'system', content: buildSonomaSystemPrompt(page, reason, browse, code, model, deepCode, sandbox, composio?.apps ?? [], userMemories, pastChatsOn) },
                 ...messages.filter((m) => m.role !== 'system'),
             ];
 
@@ -319,7 +334,7 @@ export async function POST(req: NextRequest) {
                         // a built-in tool.
                         const out = composio?.canRun(tc.name)
                             ? await composio.run(tc)
-                            : await runTool(tc);
+                            : await runTool(tc, { userId, conversationId });
                         let parsed: unknown = out;
                         try {
                             parsed = JSON.parse(out);

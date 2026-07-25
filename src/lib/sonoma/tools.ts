@@ -8,6 +8,7 @@ import { webSearch, fetchPageText } from '@/lib/ai/websearch';
 import { runPython } from '@/lib/python/run';
 import { sanitizeExternalContent } from '@/lib/security/sanitize';
 import { wrapUntrusted } from '@/lib/security/prompt-guardrails';
+import { searchPastConversations } from '@/lib/db/conversation-search';
 
 export const SONOMA_TOOLS = [
     {
@@ -77,6 +78,29 @@ export const SONOMA_TOOLS = [
     {
         type: 'function',
         function: {
+            name: 'search_past_chats',
+            description:
+                "Search this user's own earlier conversations with you and read back matching excerpts. Use it whenever they refer to something from a previous chat (\"what did we decide about X\", \"the project I mentioned\", \"continue where we left off\") instead of guessing or claiming you cannot remember. Leave the query empty to list their most recent conversations.",
+            parameters: {
+                type: 'object',
+                properties: {
+                    query: {
+                        type: 'string',
+                        description:
+                            'Keywords to look for. Use distinctive nouns from the topic, not a full sentence. Omit to list recent conversations.',
+                    },
+                    max_results: {
+                        type: 'integer',
+                        description: 'Max conversations to return (default 5, max 10).',
+                    },
+                },
+                required: [],
+            },
+        },
+    },
+    {
+        type: 'function',
+        function: {
             name: 'mermaid_diagram',
             description:
                 'Render a Mermaid diagram. Return the diagram source; the frontend will display it.',
@@ -101,7 +125,14 @@ export interface ToolCall {
     args: Record<string, unknown>;
 }
 
-export async function runTool(call: ToolCall): Promise<string> {
+export interface ToolContext {
+    /** Signed-in user, when there is one. Required by user-scoped tools. */
+    userId?: string | null;
+    /** The conversation being written right now — excluded from history search. */
+    conversationId?: string | null;
+}
+
+export async function runTool(call: ToolCall, ctx: ToolContext = {}): Promise<string> {
     switch (call.name) {
         case 'web_search': {
             const q = String(call.args.query ?? '');
@@ -172,6 +203,49 @@ export async function runTool(call: ToolCall): Promise<string> {
                 executed_in: 'tripplet-sandboxed-linux',
                 note: 'Command dispatched to the user\'s in-browser Linux VM; its real stdout is shown to the user.',
             });
+        }
+        case 'search_past_chats': {
+            if (!ctx.userId) {
+                return JSON.stringify({
+                    error: 'not_signed_in',
+                    note: 'Past chats are only available to signed-in accounts. Tell the user that history search needs them signed in, and answer from this conversation instead.',
+                });
+            }
+            const q = String(call.args.query ?? '');
+            const max = Math.min(Math.max(Number(call.args.max_results ?? 5), 1), 10);
+            try {
+                const matches = await searchPastConversations(ctx.userId, {
+                    query: q,
+                    limit: max,
+                    excludeConversationId: ctx.conversationId ?? undefined,
+                });
+                // The user's own history is still text they may have pasted from
+                // the web — sanitize before it re-enters model context, and wrap
+                // it so recalled text cannot pose as an instruction.
+                const conversations = matches.map((m) => ({
+                    title: sanitizeExternalContent(m.title),
+                    date: m.updatedAt,
+                    excerpts: m.snippets.map((s) => `${s.role}: ${sanitizeExternalContent(s.text)}`),
+                }));
+                if (conversations.length === 0) {
+                    return JSON.stringify({
+                        conversations: [],
+                        note: 'No earlier conversation matched. Say so plainly rather than inventing what was discussed.',
+                    });
+                }
+                return JSON.stringify({
+                    conversations,
+                    recalled: wrapUntrusted(
+                        JSON.stringify(conversations),
+                        "excerpts recalled from the user's past chats",
+                    ),
+                });
+            } catch (e) {
+                return JSON.stringify({
+                    error: e instanceof Error ? e.message : 'history search failed',
+                    note: 'Chat history could not be read. Do not retry — tell the user and continue from this conversation.',
+                });
+            }
         }
         case 'mermaid_diagram': {
             return JSON.stringify({

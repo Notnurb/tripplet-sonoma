@@ -27,6 +27,9 @@ export interface AppSettings {
     // Memory skill — Tripplet learns durable facts about you from your chats
     // (extracted autonomously in the background) and personalizes answers.
     memorySkill: boolean;
+    // Past Chats skill — lets the assistant search your earlier conversations
+    // (the search_past_chats tool) instead of only seeing the current thread.
+    pastChatsSkill: boolean;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -44,6 +47,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
     legacyModels: false,
     sandboxedLinux: true,
     memorySkill: true,
+    pastChatsSkill: true,
 };
 
 const KEY = 'tripplet_app_settings_v2';

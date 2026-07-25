@@ -296,6 +296,11 @@ export const engagementLimiter = rateLimit({ name: 'engagement', interval: 60 * 
 export const connectorLimiter = rateLimit({ name: 'connector', interval: 60 * 60 * 1000, uniqueTokenPerInterval: 10000 });
 // Usage summary reads (Settings panel polls every minute + focus refetches).
 export const usageLimiter = rateLimit({ name: 'usage', interval: 60 * 60 * 1000, uniqueTokenPerInterval: 10000 });
+// Memory & Profile reads/writes. Its own bucket on purpose: this used to share
+// searchLimiter with /api/search, Triplepedia article reads, /api/plan and
+// friends, so ordinary browsing drained the budget and the Memory panel showed
+// a rate-limit error on nearly every open.
+export const memoryLimiter = rateLimit({ name: 'memory', interval: 60 * 60 * 1000, uniqueTokenPerInterval: 10000 });
 
 // Auth-specific limiters — intentionally strict to block brute-force and abuse.
 export const loginLimiter = rateLimit({ name: 'login', interval: 15 * 60 * 1000, uniqueTokenPerInterval: 10000 }); // 15 min window
@@ -335,12 +340,20 @@ export const LIMITS = {
     connector: 120,     // 120 connector ops/hr — the chat composer menu lists on every open, plus connect/disconnect
     usage: 240,         // 240 usage-summary reads/hr — a 60s poll is 60/hr, leave room for focus refetches
     sync: 360,          // 360 conversation syncs/hr — debounced client pushes, one per pause in typing
+    memory: 600,        // 600 memory reads/writes/hr — the panel lists on open and the AI saves facts mid-chat
 };
 
-/** Returns a 429 response with standard headers. */
-export function rateLimitResponse() {
+/**
+ * Returns a 429 response with standard headers. Pass `message` when the
+ * generic wording would be confusing for that surface (e.g. the Memory panel,
+ * where the user did not do anything "fast").
+ */
+export const MEMORY_RATE_LIMIT_MESSAGE =
+    'Memory is catching its breath after a lot of updates in the last hour. Your saved memories are safe — try again in a minute.';
+
+export function rateLimitResponse(message?: string) {
     return NextResponse.json(
-        { error: "You're moving faster than we can keep up — give it a minute and try again." },
+        { error: message || "You're moving faster than we can keep up — give it a minute and try again." },
         {
             status: 429,
             headers: { 'Retry-After': '60' },

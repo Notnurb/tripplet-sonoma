@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { __parseExtractionForTests as parseExtraction } from '@/lib/memory/learner';
+import { __parseExtractionForTests as parseExtraction, isNearDuplicate } from '@/lib/memory/learner';
 
 describe('memory learner extraction parsing', () => {
     it('parses a clean JSON payload', () => {
@@ -34,5 +34,22 @@ describe('memory learner extraction parsing', () => {
     it('drops non-string tags and lowercases the rest', () => {
         const out = parseExtraction('{"memories": [{"content": "Likes Rust", "tags": ["RUST", 7, null]}]}');
         expect(out[0].tags).toEqual(['rust']);
+    });
+});
+
+describe('memory learner near-duplicate detection', () => {
+    it('catches rephrasings of a fact already stored', () => {
+        expect(isNearDuplicate('User prefers TypeScript', 'Prefers TypeScript')).toBe(true);
+        expect(isNearDuplicate('Working on a chess bot.', 'The user is working on a chess bot')).toBe(true);
+    });
+
+    it('lets genuinely new facts through', () => {
+        expect(isNearDuplicate('Prefers TypeScript', 'Lives in Berlin')).toBe(false);
+        expect(isNearDuplicate('Works at a fintech startup', 'Works on a chess bot')).toBe(false);
+    });
+
+    it('never treats content-free strings as duplicates', () => {
+        expect(isNearDuplicate('', 'Prefers TypeScript')).toBe(false);
+        expect(isNearDuplicate('the a of', 'the a of')).toBe(false);
     });
 });

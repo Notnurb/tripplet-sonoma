@@ -107,6 +107,7 @@ function GeneralSection() {
     const [legacyModels, setLegacyModels] = useState(s.legacyModels ?? false);
     const [sandboxedLinux, setSandboxedLinux] = useState(s.sandboxedLinux ?? true);
     const [memorySkill, setMemorySkill] = useState(s.memorySkill ?? true);
+    const [pastChatsSkill, setPastChatsSkill] = useState(s.pastChatsSkill ?? true);
     const [vmDownloaded, setVmDownloaded] = useState(false);
     const [vmDownloading, setVmDownloading] = useState(false);
     useEffect(() => { setVmDownloaded(isVmDownloaded()); }, []);
@@ -128,7 +129,7 @@ function GeneralSection() {
         }
     };
 
-    const set = <K extends 'sendOnEnter' | 'autoTitle' | 'showTimestamps' | 'soundEffects' | 'legacyModels' | 'sandboxedLinux' | 'memorySkill'>(
+    const set = <K extends 'sendOnEnter' | 'autoTitle' | 'showTimestamps' | 'soundEffects' | 'legacyModels' | 'sandboxedLinux' | 'memorySkill' | 'pastChatsSkill'>(
         key: K, val: boolean, setState: (v: boolean) => void
     ) => {
         setState(val);
@@ -187,6 +188,9 @@ function GeneralSection() {
             <SectionDivider label="Skills" />
             <SettingRow label="Memory" description="Tripplet learns about you as you chat — it remembers your preferences, projects, and expertise automatically and personalizes future answers. Signed-in accounts only.">
                 <Toggle checked={memorySkill} onChange={(v) => set('memorySkill', v, setMemorySkill)} />
+            </SettingRow>
+            <SettingRow label="Past chats" description="Let the assistant search your earlier conversations when you refer back to one, instead of only seeing the current thread. Signed-in accounts only.">
+                <Toggle checked={pastChatsSkill} onChange={(v) => set('pastChatsSkill', v, setPastChatsSkill)} />
             </SettingRow>
             <SettingRow label="Tripplet Sandboxed Linux" description="Let the assistant run bash in a real Linux VM that runs entirely in your browser (the run_bash skill).">
                 <Toggle checked={sandboxedLinux} onChange={(v) => set('sandboxedLinux', v, setSandboxedLinux)} />
