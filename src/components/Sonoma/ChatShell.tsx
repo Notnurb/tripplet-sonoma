@@ -406,37 +406,56 @@ export default function SonomaChatShell({ page = 'chat', conversationId, transpa
         [],
     );
 
+    // In-page password dialog (never a native window.prompt) — shown when a
+    // Yes/Always Accept decision needs a device password we don't have cached
+    // for this session yet.
+    const [passwordRequest, setPasswordRequest] = useState<{
+        assistantId: string;
+        activityId: string;
+        deviceId: string;
+        command: string;
+        always: boolean;
+    } | null>(null);
+
+    const runApprovedMachine = useCallback(
+        (assistantId: string, activityId: string, deviceId: string, command: string, always: boolean, password: string) => {
+            setMessages((prev) => prev.map((m) => {
+                if (m.id !== assistantId) return m;
+                const activity = m.activity.map((a) => (a.id === activityId ? { ...a, permission: 'approved' as const } : a));
+                return { ...m, activity };
+            }));
+            sessionStorage.setItem(`os_pw_${deviceId}`, password);
+            if (always) sessionStorage.setItem(`os_always_${deviceId}`, '1');
+            execMachine(assistantId, activityId, deviceId, command, password);
+        },
+        [execMachine],
+    );
+
     // Handle Yes / Always Accept / No from the in-chat permission card.
     const onMachineDecision = useCallback(
         (assistantId: string) => (activityId: string, decision: 'yes' | 'always' | 'no') => {
-            setMessages((prev) => prev.map((m) => {
-                if (m.id !== assistantId) return m;
-                const activity = m.activity.map((a) =>
-                    a.id === activityId ? { ...a, permission: decision === 'no' ? ('denied' as const) : ('approved' as const) } : a,
-                );
-                return { ...m, activity };
-            }));
-
-            if (decision === 'no') return;
+            if (decision === 'no') {
+                setMessages((prev) => prev.map((m) => {
+                    if (m.id !== assistantId) return m;
+                    const activity = m.activity.map((a) => (a.id === activityId ? { ...a, permission: 'denied' as const } : a));
+                    return { ...m, activity };
+                }));
+                return;
+            }
 
             const act = messages.find((m) => m.id === assistantId)?.activity.find((a) => a.id === activityId);
             const deviceId = String(act?.args.device_id ?? '');
             const command = String(act?.args.command ?? '');
             if (!deviceId || !command) return;
 
-            const pwKey = `os_pw_${deviceId}`;
-            let password = sessionStorage.getItem(pwKey) || '';
-            if (!password) {
-                password = window.prompt(`Enter the password for this device to run the command:\n\n${command}`) || '';
-                if (password) sessionStorage.setItem(pwKey, password);
+            const password = sessionStorage.getItem(`os_pw_${deviceId}`) || '';
+            if (password) {
+                runApprovedMachine(assistantId, activityId, deviceId, command, decision === 'always', password);
+                return;
             }
-            if (!password) return; // user cancelled the password prompt
-
-            if (decision === 'always') sessionStorage.setItem(`os_always_${deviceId}`, '1');
-
-            execMachine(assistantId, activityId, deviceId, command, password);
+            setPasswordRequest({ assistantId, activityId, deviceId, command, always: decision === 'always' });
         },
-        [messages, execMachine],
+        [messages, runApprovedMachine],
     );
 
     const runAgent = useCallback(
@@ -912,6 +931,80 @@ export default function SonomaChatShell({ page = 'chat', conversationId, transpa
                     </div>
                 )}
             </div>
+            {passwordRequest && (
+                <MachinePasswordDialog
+                    command={passwordRequest.command}
+                    onCancel={() => setPasswordRequest(null)}
+                    onSubmit={(password) => {
+                        const req = passwordRequest;
+                        setPasswordRequest(null);
+                        runApprovedMachine(req.assistantId, req.activityId, req.deviceId, req.command, req.always, password);
+                    }}
+                />
+            )}
+        </div>
+    );
+}
+
+function MachinePasswordDialog({
+    command,
+    onSubmit,
+    onCancel,
+}: {
+    command: string;
+    onSubmit: (password: string) => void;
+    onCancel: () => void;
+}) {
+    const [password, setPassword] = useState('');
+    return (
+        <div
+            className="fixed inset-0 z-50 flex items-center justify-center p-4"
+            style={{ background: 'color-mix(in oklch, var(--sonoma-bg) 55%, rgba(0,0,0,0.6))' }}
+            onMouseDown={(e) => {
+                if (e.target === e.currentTarget) onCancel();
+            }}
+        >
+            <form
+                className="sm-fadeUp w-full max-w-[380px] rounded-[16px] p-4"
+                style={{ background: 'var(--sonoma-bg)', border: '1px solid var(--sonoma-border)', boxShadow: 'var(--sonoma-shadow-lg)' }}
+                onSubmit={(e) => {
+                    e.preventDefault();
+                    if (password) onSubmit(password);
+                }}
+            >
+                <div className="text-[14px] font-semibold" style={{ color: 'var(--sonoma-ink)' }}>
+                    Device password required
+                </div>
+                <div className="mt-1 text-[12.5px]" style={{ color: 'var(--sonoma-muted)' }}>
+                    To run <code style={{ fontFamily: 'var(--font-mono)' }}>{command}</code>, enter this machine&apos;s OpenSonoma password.
+                </div>
+                <input
+                    autoFocus
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="mt-3 w-full rounded-[10px] px-3 py-2 text-[14px] outline-none"
+                    style={{ background: 'var(--sonoma-bg-2)', border: '1px solid var(--sonoma-border)', color: 'var(--sonoma-ink)' }}
+                />
+                <div className="mt-3 flex justify-end gap-2">
+                    <button
+                        type="button"
+                        onClick={onCancel}
+                        className="rounded-full px-3.5 py-1.5 text-[12.5px] font-medium"
+                        style={{ border: '1px solid var(--sonoma-border)', color: 'var(--sonoma-ink-2)', background: 'transparent' }}
+                    >
+                        Cancel
+                    </button>
+                    <button
+                        type="submit"
+                        disabled={!password}
+                        className="rounded-full px-3.5 py-1.5 text-[12.5px] font-medium"
+                        style={{ background: 'var(--sonoma-accent)', color: 'var(--sonoma-accent-ink, #fff)', opacity: password ? 1 : 0.5 }}
+                    >
+                        Run
+                    </button>
+                </div>
+            </form>
         </div>
     );
 }

@@ -166,7 +166,20 @@ const REGISTER_TIMEOUT_MS = 8_000;
 
 // Open a short-lived authenticated "client" session against the relay. The
 // caller gets the socket once register_ack arrives (or a rejection reason).
-function openClientSession(opts: {
+// Retries once on a bare connection error — Vercel's serverless runtime has
+// been observed to drop the occasional outbound WSS handshake to the relay;
+// a fresh attempt almost always succeeds immediately after.
+async function openClientSession(opts: {
+    accountId: string;
+    authJwt?: string;
+}): Promise<{ ok: true; session: ClientSession; machines: RelayMachine[] } | { ok: false; error: string }> {
+    const first = await openClientSessionOnce(opts);
+    if (first.ok || first.error !== 'Could not connect to the Tripplet relay.') return first;
+    console.error('[relay] connection attempt failed, retrying once:', first.error);
+    return openClientSessionOnce(opts);
+}
+
+function openClientSessionOnce(opts: {
     accountId: string;
     authJwt?: string;
 }): Promise<{ ok: true; session: ClientSession; machines: RelayMachine[] } | { ok: false; error: string }> {
@@ -248,10 +261,11 @@ function openClientSession(opts: {
             }
         });
 
-        ws.addEventListener('error', () => {
+        ws.addEventListener('error', (ev) => {
             if (settled) return;
             settled = true;
             clearTimeout(timer);
+            console.error('[relay] websocket error connecting to', relayUrl, ev instanceof ErrorEvent ? ev.message : String(ev));
             resolve({ ok: false, error: 'Could not connect to the Tripplet relay.' });
         });
     });
