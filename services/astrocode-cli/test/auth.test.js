@@ -230,15 +230,44 @@ test('the authorize URL carries every required parameter', () => {
 
 // ── loopback ────────────────────────────────────────────────────────────────
 
-test('the loopback listener captures the code the browser delivers', async () => {
+test('the loopback listener captures the code, but holds the browser response until respond() is called', async () => {
   const lb = await startLoopback();
   try {
     assert.ok(lb.port >= 9271 && lb.port <= 9280);
     assert.equal(lb.redirectUri, redirectUriFor(lb.port));
-    const res = await fetch(`${lb.redirectUri}?code=abc123&state=xyz`);
+
+    const pending = fetch(`${lb.redirectUri}?code=abc123&state=xyz`);
+    assert.deepEqual(await lb.result, { code: 'abc123', state: 'xyz' });
+
+    // The code has arrived, but nothing has actually signed the user in yet
+    // (the token exchange hasn't run) — the browser must still be waiting.
+    const raced = await Promise.race([pending.then(() => 'answered'), new Promise((r) => setTimeout(() => r('still-waiting'), 50))]);
+    assert.equal(raced, 'still-waiting', 'the browser must not be told "signed in" before respond() says so');
+
+    lb.respond(true);
+    const res = await pending;
     assert.equal(res.status, 200);
     assert.match(await res.text(), /signed in/i);
-    assert.deepEqual(await lb.result, { code: 'abc123', state: 'xyz' });
+  } finally { lb.close(); }
+});
+
+test('a failed exchange tells the browser sign-in did not finish, not a false success', async () => {
+  const lb = await startLoopback();
+  try {
+    const pending = fetch(`${lb.redirectUri}?code=abc123&state=xyz`);
+    await lb.result;
+    lb.respond(false, 'token exchange failed');
+    const res = await pending;
+    assert.equal(res.status, 500);
+    assert.match(await res.text(), /did not finish/i);
+  } finally { lb.close(); }
+});
+
+test('respond() is a safe no-op when the browser never connected (manual-paste flow)', async () => {
+  const lb = await startLoopback();
+  try {
+    assert.doesNotThrow(() => lb.respond(true));
+    assert.doesNotThrow(() => lb.respond(false, 'whatever'));
   } finally { lb.close(); }
 });
 
@@ -365,6 +394,39 @@ test('a rejected refresh token reports rather than looping', () => withTempDir(a
 
 // ── full flow ───────────────────────────────────────────────────────────────
 
+test('a failed token exchange never claims success to the browser, and nothing is saved', () => withTempDir(async (dir) => {
+  // This is the exact bug report: the loopback page used to say "you're
+  // signed in" the instant a code arrived, before the exchange that turns
+  // that code into real, saved tokens had even started. A user who trusted
+  // that page and closed their terminal lost the session with no error ever
+  // shown — auth.json was left holding only the half-registered client. Here
+  // we skip straight to delivering a code the token endpoint has never seen
+  // (standing in for any real exchange failure — expired code, a network
+  // blip, a server hiccup) and prove the browser is told it failed, not
+  // that it succeeded.
+  const mock = await startMockServer();
+  const file = path.join(dir, 'auth.json');
+  try {
+    let browserRes;
+    const flow = login({
+      baseUrl: mock.base,
+      file,
+      openBrowser: false,
+      onReady: ({ url, port }) => {
+        const state = new URL(url).searchParams.get('state');
+        browserRes = fetch(`http://127.0.0.1:${port}/callback?code=bogus-code-never-issued&state=${state}`);
+      },
+    });
+
+    await assert.rejects(flow, /invalid_grant|Token exchange failed/);
+
+    const res = await browserRes;
+    assert.equal(res.status, 500, 'the browser must be told it failed, not get a 200');
+    assert.match(await res.text(), /did not finish/i);
+    assert.equal(loadAuth({ file }), null, 'a failed exchange must not leave a session on disk');
+  } finally { mock.close(); }
+}));
+
 test('a full login through the loopback stores a usable session', () => withTempDir(async (dir) => {
   const mock = await startMockServer({ email: 'pilot@tripplet.test' });
   const file = path.join(dir, 'auth.json');
@@ -459,13 +521,19 @@ test('a reused authorization code is refused', () => withTempDir(async (dir) => 
         meta, clientId: reg.clientId, redirectUri: lb.redirectUri,
         challenge: pkce.challenge, state,
       });
-      await actAsBrowser(url);
+      // The loopback now holds the browser's response open until something
+      // calls respond() — this test drives exchangeCode() itself rather than
+      // through login(), so it has to answer the browser explicitly, or the
+      // held-open connection leaks into later tests.
+      const browserRes = actAsBrowser(url);
       const { code } = await lb.result;
 
       const first = await exchangeCode({
         meta, clientId: reg.clientId, code, redirectUri: lb.redirectUri, verifier: pkce.verifier,
       });
       assert.ok(first.accessToken);
+      lb.respond(true);
+      await browserRes;
 
       await assert.rejects(
         () => exchangeCode({ meta, clientId: reg.clientId, code, redirectUri: lb.redirectUri, verifier: pkce.verifier }),
@@ -483,7 +551,9 @@ test('a wrong PKCE verifier is refused', () => withTempDir(async (dir) => {
     const pkce = makePkce();
     const lb = await startLoopback();
     try {
-      await actAsBrowser(authorizeUrl({
+      // See the note in the reused-code test above: answer the browser
+      // ourselves since we're driving exchangeCode() directly, not login().
+      const browserRes = actAsBrowser(authorizeUrl({
         meta, clientId: reg.clientId, redirectUri: lb.redirectUri,
         challenge: pkce.challenge, state: makeState(),
       }));
@@ -495,6 +565,8 @@ test('a wrong PKCE verifier is refused', () => withTempDir(async (dir) => {
         }),
         /invalid_grant|PKCE|Token exchange failed/,
       );
+      lb.respond(false, 'PKCE mismatch');
+      await browserRes;
     } finally { lb.close(); }
   } finally { mock.close(); }
 }));

@@ -84,37 +84,56 @@ export async function login({
     got = await Promise.race(races);
     method = got._via;
     checkState(state, got.state);
+  } catch (err) {
+    // The browser may already be showing our loopback page waiting for an
+    // answer (it got a code; the race just lost it, e.g. a state mismatch)
+    // — tell it sign-in did not finish rather than leaving it hanging on
+    // whatever it last rendered.
+    loopback.respond(false, err.message);
+    throw err;
   } finally {
     loopback.close();
   }
 
-  const tokens = await exchangeCode({
-    meta,
-    clientId,
-    code: got.code,
-    redirectUri: loopback.redirectUri,
-    verifier: pkce.verifier,
-  });
+  // From here on on the browser tab is holding its response open, waiting to
+  // hear whether this actually worked — see startLoopback()'s `respond`.
+  // Nothing may claim "you're signed in" to the user until saveAuth() below
+  // has actually run: that page is the only signal an unattended terminal
+  // gives them, and a user who trusts it and closes the terminal early must
+  // not lose the session it promised.
+  try {
+    const tokens = await exchangeCode({
+      meta,
+      clientId,
+      code: got.code,
+      redirectUri: loopback.redirectUri,
+      verifier: pkce.verifier,
+    });
 
-  const user = await fetchUserInfo({ baseUrl, accessToken: tokens.accessToken });
+    const user = await fetchUserInfo({ baseUrl, accessToken: tokens.accessToken });
 
-  const record = {
-    baseUrl,
-    issuer: meta.issuer,
-    clientId,
-    accessToken: tokens.accessToken,
-    refreshToken: tokens.refreshToken,
-    expiresAt: tokens.expiresAt,
-    scope: tokens.scope,
-    email: user?.email ?? null,
-    name: user?.name ?? null,
-    signedInAt: Date.now(),
-  };
-  const saved = saveAuth(record, file ? { file } : undefined);
-  if (!saved.ok) {
-    throw new AuthError(`Signed in, but could not save credentials: ${saved.error}`, { code: 'save_failed' });
+    const record = {
+      baseUrl,
+      issuer: meta.issuer,
+      clientId,
+      accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
+      expiresAt: tokens.expiresAt,
+      scope: tokens.scope,
+      email: user?.email ?? null,
+      name: user?.name ?? null,
+      signedInAt: Date.now(),
+    };
+    const saved = saveAuth(record, file ? { file } : undefined);
+    if (!saved.ok) {
+      throw new AuthError(`Signed in, but could not save credentials: ${saved.error}`, { code: 'save_failed' });
+    }
+    loopback.respond(true);
+    return { auth: record, method, user };
+  } catch (err) {
+    loopback.respond(false, err.message);
+    throw err;
   }
-  return { auth: record, method, user };
 }
 
 /** Current sign-in, if any. */

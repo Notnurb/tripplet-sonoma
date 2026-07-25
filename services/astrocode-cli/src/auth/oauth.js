@@ -249,14 +249,30 @@ const PAGE = (title, body, accent) => `<!doctype html><meta charset="utf-8">
 
 /**
  * Listen on the first free loopback port.
- * @returns {Promise<{port, redirectUri, result: Promise<{code,state}>, close(): void}>}
+ *
+ * The browser request is deliberately left open (not answered) once we have
+ * a code: exchanging that code for real tokens and writing them to disk
+ * still has to happen, and if the page tells the user "you're signed in"
+ * before that work is done, a user who takes it at its word and closes the
+ * terminal loses the session with no error ever shown to them. `respond()`
+ * lets the caller answer the browser only once it actually knows whether
+ * sign-in succeeded.
+ *
+ * @returns {Promise<{port, redirectUri, result: Promise<{code,state}>, close(): void, respond(ok: boolean, detail?: string): void}>}
  */
 export async function startLoopback(ports = LOOPBACK_PORTS) {
   let resolveResult;
   let rejectResult;
   const result = new Promise((res, rej) => { resolveResult = res; rejectResult = rej; });
 
+  /** The browser's still-open response, once we have a code to exchange. */
+  let pendingRes = null;
+
   const server = http.createServer((req, res) => {
+    // This server exists to answer exactly one real browser request in its
+    // whole life; keep-alive just delays the socket (and the port) actually
+    // freeing up after that, for no benefit.
+    res.setHeader('Connection', 'close');
     let url;
     try {
       url = new URL(req.url, 'http://127.0.0.1');
@@ -273,12 +289,14 @@ export async function startLoopback(ports = LOOPBACK_PORTS) {
     const code = url.searchParams.get('code');
     const state = url.searchParams.get('state');
 
-    res.writeHead(error || !code ? 400 : 200, { 'content-type': 'text/html; charset=utf-8' });
     if (error || !code) {
+      res.writeHead(400, { 'content-type': 'text/html; charset=utf-8' });
       res.end(PAGE('Sign-in failed', error || 'No authorization code was returned.', '#f87171'));
       rejectResult(new AuthError(`Authorization failed: ${error || 'no code returned'}`, { code: error || 'no_code' }));
     } else {
-      res.end(PAGE('You are signed in', 'You can close this tab and return to your terminal.', '#4ade80'));
+      // Do not answer yet — hold the connection until respond() is called
+      // with the real outcome of the token exchange.
+      pendingRes = res;
       resolveResult({ code, state });
     }
   });
@@ -309,7 +327,22 @@ export async function startLoopback(ports = LOOPBACK_PORTS) {
   // Never let a forgotten listener hold the process open.
   server.unref?.();
 
-  return { port, redirectUri: redirectUriFor(port), result, close };
+  /** Tell the browser tab what actually happened. A no-op if it never connected
+   *  (manual-paste flow on a machine the browser can't reach) or already got
+   *  an answer (a malformed callback fails fast, above, without a pending res). */
+  const respond = (ok, detail) => {
+    if (!pendingRes) return;
+    const res = pendingRes;
+    pendingRes = null;
+    try {
+      res.writeHead(ok ? 200 : 500, { 'content-type': 'text/html; charset=utf-8' });
+      res.end(ok
+        ? PAGE('You are signed in', 'You can close this tab and return to your terminal.', '#4ade80')
+        : PAGE('Sign-in did not finish', detail || 'Something went wrong saving your session — check your terminal.', '#f87171'));
+    } catch { /* the browser already gave up on the connection */ }
+  };
+
+  return { port, redirectUri: redirectUriFor(port), result, close, respond };
 }
 
 // ── manual paste ────────────────────────────────────────────────────────────
