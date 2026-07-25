@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { MODELS, type Model } from '@/lib/ai/models';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import { cn } from '@/lib/utils';
@@ -66,6 +66,11 @@ interface SonomaComposerProps {
     attachments?: boolean;
 
     placeholder?: string;
+
+    // Paired OpenSonoma machines available to @mention.
+    machines?: { deviceId: string; machineName: string }[];
+    mentionedMachine?: { deviceId: string; machineName: string } | null;
+    onMentionMachine?: (m: { deviceId: string; machineName: string } | null) => void;
 }
 
 function ToolChip({
@@ -417,11 +422,15 @@ export default function SonomaComposer({
     connectors,
     attachments = true,
     placeholder,
+    machines = [],
+    mentionedMachine,
+    onMentionMachine,
 }: SonomaComposerProps) {
     const modelList = models ?? MODELS;
     const isMobile = useIsMobile();
     const taRef = useRef<HTMLTextAreaElement>(null);
     const fileRef = useRef<HTMLInputElement>(null);
+    const overlayRef = useRef<HTMLDivElement>(null);
 
     useLayoutEffect(() => {
         const ta = taRef.current;
@@ -430,14 +439,111 @@ export default function SonomaComposer({
         ta.style.height = `${Math.min(ta.scrollHeight, 220)}px`;
     }, [value]);
 
+    // ── @mention autocomplete ────────────────────────────────────────────
+    // Active whenever the caret sits inside an unbroken "@query" run (no
+    // whitespace between the @ and the caret). Tab/Enter picks the
+    // highlighted machine and inserts "@Machine Name " at that position.
+    const [mentionQuery, setMentionQuery] = useState<string | null>(null);
+    const [mentionStart, setMentionStart] = useState(0);
+    const [mentionIndex, setMentionIndex] = useState(0);
+
+    const mentionMatches = useMemo(() => {
+        if (mentionQuery === null) return [];
+        const q = mentionQuery.toLowerCase();
+        return machines.filter((m) => m.machineName.toLowerCase().includes(q));
+    }, [mentionQuery, machines]);
+
+    const detectMention = useCallback((text: string, caret: number) => {
+        const upTo = text.slice(0, caret);
+        const at = upTo.lastIndexOf('@');
+        if (at === -1 || /\s/.test(upTo.slice(at + 1))) {
+            setMentionQuery(null);
+            return;
+        }
+        setMentionQuery(upTo.slice(at + 1));
+        setMentionStart(at);
+        setMentionIndex(0);
+    }, []);
+
+    const pickMention = useCallback(
+        (m: { deviceId: string; machineName: string }) => {
+            const ta = taRef.current;
+            const caret = ta ? ta.selectionStart : value.length;
+            const before = value.slice(0, mentionStart);
+            const after = value.slice(caret);
+            const inserted = `@${m.machineName} `;
+            onChange(before + inserted + after);
+            onMentionMachine?.(m);
+            setMentionQuery(null);
+            requestAnimationFrame(() => {
+                if (!ta) return;
+                const pos = before.length + inserted.length;
+                ta.focus();
+                ta.setSelectionRange(pos, pos);
+            });
+        },
+        [value, mentionStart, onChange, onMentionMachine],
+    );
+
+    // Highlighted-text overlay sitting exactly under the (text-transparent)
+    // textarea, so the current @mention token renders in the accent color
+    // while everything else stays the normal ink color.
+    const mentionNamePattern = useMemo(() => {
+        if (machines.length === 0) return null;
+        const names = machines.map((m) => m.machineName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+        return new RegExp(`@(?:${names.join('|')})\\b|@${mentionQuery ? mentionQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') : ''}$`, 'g');
+    }, [machines, mentionQuery]);
+
+    const overlayNodes = useMemo(() => {
+        if (!mentionNamePattern || (machines.length === 0 && mentionQuery === null)) return null;
+        const nodes: React.ReactNode[] = [];
+        let last = 0;
+        let m: RegExpExecArray | null;
+        mentionNamePattern.lastIndex = 0;
+        let key = 0;
+        while ((m = mentionNamePattern.exec(value))) {
+            if (m.index > last) nodes.push(<span key={key++}>{value.slice(last, m.index)}</span>);
+            nodes.push(
+                <span key={key++} style={{ color: 'var(--sonoma-accent-2)', fontWeight: 600 }}>
+                    {m[0]}
+                </span>,
+            );
+            last = m.index + m[0].length;
+            if (m.index === m.index && m[0].length === 0) break; // safety
+        }
+        nodes.push(<span key={key++}>{value.slice(last)}</span>);
+        return nodes;
+    }, [mentionNamePattern, value, machines.length, mentionQuery]);
+
     const onKey = useCallback(
         (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+            if (mentionQuery !== null && mentionMatches.length > 0) {
+                if (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey)) {
+                    e.preventDefault();
+                    pickMention(mentionMatches[mentionIndex] ?? mentionMatches[0]);
+                    return;
+                }
+                if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    setMentionIndex((i) => (i + 1) % mentionMatches.length);
+                    return;
+                }
+                if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    setMentionIndex((i) => (i - 1 + mentionMatches.length) % mentionMatches.length);
+                    return;
+                }
+                if (e.key === 'Escape') {
+                    setMentionQuery(null);
+                    return;
+                }
+            }
             if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
                 onSend();
             }
         },
-        [onSend],
+        [onSend, mentionQuery, mentionMatches, mentionIndex, pickMention],
     );
 
     const onPick = useCallback(
@@ -508,27 +614,109 @@ export default function SonomaComposer({
             }}
         >
             <Attachments files={files} onRemove={onRemoveFile} />
-            <textarea
-                ref={taRef}
-                rows={1}
-                value={value}
-                onChange={(e) => onChange(e.target.value)}
-                onKeyDown={onKey}
-                onPaste={onPaste}
-                onDrop={onDrop}
-                onDragOver={onDragOver}
-                placeholder={placeholder || 'How can Tripplet help?'}
-                className="w-full resize-none border-0 bg-transparent leading-[1.55] outline-none"
-                style={{
-                    color: 'var(--sonoma-ink)',
-                    // 16px keeps iOS Safari from auto-zooming the field on focus.
-                    fontSize: 16,
-                    padding: '4px 6px 6px',
-                    minHeight: 28,
-                    maxHeight: 220,
-                    fontFamily: 'inherit',
-                }}
-            />
+            <div className="relative">
+                {overlayNodes && (
+                    <div
+                        ref={overlayRef}
+                        aria-hidden
+                        className="pointer-events-none absolute inset-0 w-full resize-none whitespace-pre-wrap break-words leading-[1.55]"
+                        style={{
+                            fontSize: 16,
+                            padding: '4px 6px 6px',
+                            minHeight: 28,
+                            maxHeight: 220,
+                            fontFamily: 'inherit',
+                            color: 'var(--sonoma-ink)',
+                            overflow: 'hidden',
+                        }}
+                    >
+                        {overlayNodes}
+                    </div>
+                )}
+                <textarea
+                    ref={taRef}
+                    rows={1}
+                    value={value}
+                    onChange={(e) => {
+                        onChange(e.target.value);
+                        detectMention(e.target.value, e.target.selectionStart);
+                    }}
+                    onKeyUp={(e) => {
+                        const ta = e.currentTarget;
+                        detectMention(ta.value, ta.selectionStart);
+                    }}
+                    onClick={(e) => {
+                        const ta = e.currentTarget;
+                        detectMention(ta.value, ta.selectionStart);
+                    }}
+                    onScroll={(e) => {
+                        if (overlayRef.current) overlayRef.current.scrollTop = e.currentTarget.scrollTop;
+                    }}
+                    onKeyDown={onKey}
+                    onPaste={onPaste}
+                    onDrop={onDrop}
+                    onDragOver={onDragOver}
+                    placeholder={placeholder || 'How can Tripplet help?'}
+                    className="relative w-full resize-none border-0 bg-transparent leading-[1.55] outline-none"
+                    style={{
+                        color: overlayNodes ? 'transparent' : 'var(--sonoma-ink)',
+                        caretColor: 'var(--sonoma-ink)',
+                        // 16px keeps iOS Safari from auto-zooming the field on focus.
+                        fontSize: 16,
+                        padding: '4px 6px 6px',
+                        minHeight: 28,
+                        maxHeight: 220,
+                        fontFamily: 'inherit',
+                    }}
+                />
+                {mentionQuery !== null && mentionMatches.length > 0 && (
+                    <div
+                        className="absolute left-0 top-full z-20 mt-1 min-w-[200px] overflow-hidden rounded-[12px]"
+                        style={{
+                            background: 'var(--sonoma-surface)',
+                            border: '1px solid var(--sonoma-border)',
+                            boxShadow: 'var(--sonoma-shadow-md)',
+                        }}
+                    >
+                        {mentionMatches.map((m, i) => (
+                            <button
+                                key={m.deviceId}
+                                type="button"
+                                onMouseDown={(e) => {
+                                    e.preventDefault();
+                                    pickMention(m);
+                                }}
+                                className="flex w-full items-center gap-2 px-3 py-2 text-left text-[13px]"
+                                style={{
+                                    background: i === mentionIndex ? 'var(--sonoma-accent-soft)' : 'transparent',
+                                    color: i === mentionIndex ? 'var(--sonoma-accent-2)' : 'var(--sonoma-ink)',
+                                }}
+                            >
+                                @{m.machineName}
+                            </button>
+                        ))}
+                        <div
+                            className="px-3 py-1.5 text-[11px]"
+                            style={{ color: 'var(--sonoma-faint)', borderTop: '1px solid var(--sonoma-border)' }}
+                        >
+                            Tab to select
+                        </div>
+                    </div>
+                )}
+            </div>
+            {mentionedMachine && (
+                <div className="mt-1 flex items-center gap-1.5 px-1 text-[11.5px]" style={{ color: 'var(--sonoma-faint)' }}>
+                    <span style={{ color: 'var(--sonoma-accent-2)' }}>@{mentionedMachine.machineName}</span>
+                    attached — Sonoma may ask permission to run commands on it.
+                    <button
+                        type="button"
+                        onClick={() => onMentionMachine?.(null)}
+                        className="ml-0.5 underline"
+                    >
+                        remove
+                    </button>
+                </div>
+            )}
             <div className="mt-1.5 flex flex-wrap items-center gap-2">
                 {attachments && (
                     <>

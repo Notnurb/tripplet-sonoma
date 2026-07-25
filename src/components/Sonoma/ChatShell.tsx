@@ -194,6 +194,30 @@ export default function SonomaChatShell({ page = 'chat', conversationId, transpa
     const abortRef = useRef<AbortController | null>(null);
     const scrollRef = useRef<HTMLDivElement>(null);
     const bashRunRef = useRef<Set<string>>(new Set());
+    const machineRunRef = useRef<Set<string>>(new Set());
+    // Paired OpenSonoma machines, for the composer's @mention list and the
+    // Manage panel. Refetched whenever Manage closes (pair/unpair changes it).
+    const [pairedMachines, setPairedMachines] = useState<{ deviceId: string; machineName: string }[]>([]);
+    const [mentionedMachine, setMentionedMachine] = useState<{ deviceId: string; machineName: string } | null>(null);
+
+    const refreshMachines = useCallback(() => {
+        fetch('/api/connect/machines')
+            .then((r) => (r.ok ? r.json() : { machines: [] }))
+            .then((data) => {
+                const list = Array.isArray(data.machines) ? data.machines : [];
+                setPairedMachines(
+                    list.map((m: { deviceId: string; machineName: string; status: string; online: boolean; lastSeenAt: string | null }) => ({
+                        deviceId: m.deviceId,
+                        machineName: m.machineName,
+                    })),
+                );
+            })
+            .catch(() => { /* signed out / relay unreachable — composer just shows no machines */ });
+    }, []);
+
+    useEffect(() => {
+        refreshMachines();
+    }, [refreshMachines]);
     // Mirror of `atBottom` for the streaming auto-scroll effect, so it can read
     // the latest value without re-subscribing on every scroll.
     const atBottomRef = useRef(true);
@@ -331,6 +355,90 @@ export default function SonomaChatShell({ page = 'chat', conversationId, transpa
         });
     }, []);
 
+    // Actually run a run_on_machine tool call over the relay, after the user
+    // has approved it (see onMachineDecision). Streams stdout/stderr and
+    // patches the same "done" card shape run_bash uses.
+    const execMachine = useCallback(
+        (assistantId: string, activityId: string, deviceId: string, command: string, password: string) => {
+            if (machineRunRef.current.has(activityId)) return;
+            machineRunRef.current.add(activityId);
+            let out = '';
+            fetch('/api/connect/exec', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ deviceId, command, password }),
+            })
+                .then(async (res) => {
+                    if (!res.body) throw new Error('no stream');
+                    const reader = res.body.getReader();
+                    const decoder = new TextDecoder();
+                    let buf = '';
+                    while (true) {
+                        const { value, done } = await reader.read();
+                        if (done) break;
+                        buf += decoder.decode(value, { stream: true });
+                        let nl: number;
+                        while ((nl = buf.indexOf('\n\n')) !== -1) {
+                            const chunk = buf.slice(0, nl);
+                            buf = buf.slice(nl + 2);
+                            const line = chunk.split('\n').find((l) => l.startsWith('data:'));
+                            if (!line) continue;
+                            let ev: { type: string; stream?: string; data?: string; ok?: boolean; error?: string };
+                            try {
+                                ev = JSON.parse(line.slice(5).trim());
+                            } catch {
+                                continue;
+                            }
+                            if (ev.type === 'stream' && ev.data) out += ev.data;
+                            else if (ev.type === 'result' && !ev.ok && ev.error) out += (out ? '\n' : '') + `Error: ${ev.error}`;
+                        }
+                    }
+                })
+                .catch((e) => {
+                    out += (out ? '\n' : '') + `Error: ${e instanceof Error ? e.message : 'exec failed'}`;
+                })
+                .finally(() => {
+                    setMessages((prev) => prev.map((m) =>
+                        m.id === assistantId ? { ...m, activity: finishBashActivity(m.activity, activityId, out) } : m,
+                    ));
+                });
+        },
+        [],
+    );
+
+    // Handle Yes / Always Accept / No from the in-chat permission card.
+    const onMachineDecision = useCallback(
+        (assistantId: string) => (activityId: string, decision: 'yes' | 'always' | 'no') => {
+            setMessages((prev) => prev.map((m) => {
+                if (m.id !== assistantId) return m;
+                const activity = m.activity.map((a) =>
+                    a.id === activityId ? { ...a, permission: decision === 'no' ? ('denied' as const) : ('approved' as const) } : a,
+                );
+                return { ...m, activity };
+            }));
+
+            if (decision === 'no') return;
+
+            const act = messages.find((m) => m.id === assistantId)?.activity.find((a) => a.id === activityId);
+            const deviceId = String(act?.args.device_id ?? '');
+            const command = String(act?.args.command ?? '');
+            if (!deviceId || !command) return;
+
+            const pwKey = `os_pw_${deviceId}`;
+            let password = sessionStorage.getItem(pwKey) || '';
+            if (!password) {
+                password = window.prompt(`Enter the password for this device to run the command:\n\n${command}`) || '';
+                if (password) sessionStorage.setItem(pwKey, password);
+            }
+            if (!password) return; // user cancelled the password prompt
+
+            if (decision === 'always') sessionStorage.setItem(`os_always_${deviceId}`, '1');
+
+            execMachine(assistantId, activityId, deviceId, command, password);
+        },
+        [messages, execMachine],
+    );
+
     const runAgent = useCallback(
         async (history: UIMessage[], assistantId: string) => {
             const ctrl = new AbortController();
@@ -352,6 +460,7 @@ export default function SonomaChatShell({ page = 'chat', conversationId, transpa
                 sandbox: sandboxEnabled,
                 memory: memoryEnabled,
                 pastChats: pastChatsEnabled,
+                machine: mentionedMachine,
                 // Override auth rides on the HttpOnly dev_unlock cookie.
                 ...(devOverride
                     ? { dev: { apiKey: devOverride.apiKey, modelId: devOverride.modelId } }
@@ -407,6 +516,27 @@ export default function SonomaChatShell({ page = 'chat', conversationId, transpa
                             ),
                         ),
                     onActivity: (ev) => {
+                        if (ev.tool === 'run_on_machine') {
+                            const deviceId = String(ev.args?.device_id ?? '');
+                            const machineName = mentionedMachine?.deviceId === deviceId ? mentionedMachine.machineName : deviceId;
+                            const enriched = { ...ev, args: { ...ev.args, machine_name: machineName } };
+                            const alwaysAccepted = typeof window !== 'undefined' && sessionStorage.getItem(`os_always_${deviceId}`) === '1';
+                            setMessages((prev) =>
+                                prev.map((m) => {
+                                    if (m.id !== assistantId) return m;
+                                    const merged = mergeActivity(m.activity, enriched);
+                                    const activity = merged.map((a) =>
+                                        a.id === ev.id ? { ...a, permission: alwaysAccepted ? ('approved' as const) : ('pending' as const) } : a,
+                                    );
+                                    return { ...m, activity };
+                                }),
+                            );
+                            if (alwaysAccepted) {
+                                const password = sessionStorage.getItem(`os_pw_${deviceId}`) || '';
+                                if (password) execMachine(assistantId, ev.id, deviceId, String(ev.args?.command ?? ''), password);
+                            }
+                            return;
+                        }
                         setMessages((prev) =>
                             prev.map((m) =>
                                 m.id === assistantId ? { ...m, activity: mergeActivity(m.activity, ev) } : m,
@@ -449,7 +579,7 @@ export default function SonomaChatShell({ page = 'chat', conversationId, transpa
                 setBusy(false);
             }
         },
-        [browse, reason, codeMode, deepCode, deepCodeLevel, page, model, devOverride, sandboxEnabled, memoryEnabled, pastChatsEnabled, execBash],
+        [browse, reason, codeMode, deepCode, deepCodeLevel, page, model, devOverride, sandboxEnabled, memoryEnabled, pastChatsEnabled, mentionedMachine, execBash, execMachine],
     );
 
     const handleSend = useCallback(async () => {
@@ -494,6 +624,7 @@ export default function SonomaChatShell({ page = 'chat', conversationId, transpa
         setMessages(next);
         setDraft('');
         setUploaded([]);
+        setMentionedMachine(null);
 
         await runAgent(next.slice(0, -1), assistantMessage.id);
     }, [busy, draft, uploaded, messages, model, runAgent, createConversation, page, conversationId, forceEnabled]);
@@ -631,6 +762,9 @@ export default function SonomaChatShell({ page = 'chat', conversationId, transpa
                                             onDeepCodeLevelChange={setDeepCodeLevel}
                                             connectors
                                             placeholder={GREETINGS[page].placeholder}
+                                            machines={pairedMachines}
+                                            mentionedMachine={mentionedMachine}
+                                            onMentionMachine={setMentionedMachine}
                                         />
                                         </div>
                                     </div>
@@ -684,6 +818,7 @@ export default function SonomaChatShell({ page = 'chat', conversationId, transpa
                                         isStreaming={isLast && busy}
                                         onRegenerate={isLast ? handleRegenerate : undefined}
                                         white={transparent}
+                                        onMachineDecision={onMachineDecision(m.id)}
                                     />
                                 );
                             })}
@@ -758,6 +893,9 @@ export default function SonomaChatShell({ page = 'chat', conversationId, transpa
                                 deepCodeLevel={deepCodeLevel}
                                 onDeepCodeLevelChange={setDeepCodeLevel}
                                 connectors
+                                machines={pairedMachines}
+                                mentionedMachine={mentionedMachine}
+                                onMentionMachine={setMentionedMachine}
                             />
                             </div>
                             <div

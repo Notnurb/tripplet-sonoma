@@ -22,6 +22,7 @@ export function buildSonomaSystemPrompt(
     connectedApps: string[] = [],
     memories: string[] = [],
     pastChats = false,
+    mentionedMachine?: { deviceId: string; machineName: string } | null,
 ): string {
     const identity = getModelSystemPrompt(model);
     const dateNote =
@@ -117,5 +118,12 @@ export function buildSonomaSystemPrompt(
           'The VM has no network and no host access. Its stdout is shown to the user in an "Executing bash" card, and launching it opens the full Linux terminal. ' +
           'Prefer running real commands over describing what they would print.'
         : '';
-    return identity + '\n\n' + dateNote + '\n\n' + base + pageNote + browseNote + reasonNote + codeNote + deepCodeNote + webBundleNote + sandboxNote + memoryNote + pastChatsNote + connectorsNote;
+    const machineNote = mentionedMachine
+        ? '\n\n## Skill: Paired machine — ' + mentionedMachine.machineName + '\n' +
+          `The user @mentioned their paired machine "${mentionedMachine.machineName}" (device_id: ${mentionedMachine.deviceId}) in this message. ` +
+          'You may call `run_on_machine` with that exact device_id to run real shell commands on it. ' +
+          'The user is always shown a Yes / Always Accept / No permission prompt before anything actually runs — do not tell them you ran something unless the tool result confirms it executed. ' +
+          'Only target this device_id; never invent one.'
+        : '';
+    return identity + '\n\n' + dateNote + '\n\n' + base + pageNote + browseNote + reasonNote + codeNote + deepCodeNote + webBundleNote + sandboxNote + machineNote + memoryNote + pastChatsNote + connectorsNote;
 }

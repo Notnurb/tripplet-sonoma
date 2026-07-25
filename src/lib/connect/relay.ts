@@ -148,3 +148,242 @@ export function relayPair(opts: {
         );
     });
 }
+
+export interface RelayMachine {
+    deviceId: string;
+    machineName: string;
+    status: string;
+    lastSeenAt: string | null;
+    online: boolean;
+}
+
+interface ClientSession {
+    ws: WebSocket;
+    close: () => void;
+}
+
+const REGISTER_TIMEOUT_MS = 8_000;
+
+// Open a short-lived authenticated "client" session against the relay. The
+// caller gets the socket once register_ack arrives (or a rejection reason).
+function openClientSession(opts: {
+    accountId: string;
+    authJwt?: string;
+}): Promise<{ ok: true; session: ClientSession; machines: RelayMachine[] } | { ok: false; error: string }> {
+    return new Promise((resolve) => {
+        let relayUrl: string;
+        try {
+            relayUrl = resolveRelayUrl().url;
+        } catch (err) {
+            resolve({ ok: false, error: err instanceof Error ? err.message : 'Relay misconfigured.' });
+            return;
+        }
+
+        let ws: WebSocket;
+        try {
+            ws = new WebSocket(relayUrl);
+        } catch {
+            resolve({ ok: false, error: 'Could not reach the Tripplet relay.' });
+            return;
+        }
+
+        let settled = false;
+        const timer = setTimeout(() => {
+            if (settled) return;
+            settled = true;
+            try {
+                ws.close();
+            } catch {
+                /* ignore */
+            }
+            resolve({ ok: false, error: 'The relay did not respond in time.' });
+        }, REGISTER_TIMEOUT_MS);
+
+        const sessionId = randomUUID();
+        ws.addEventListener('open', () => {
+            ws.send(
+                JSON.stringify({
+                    type: 'register',
+                    role: 'client',
+                    account_id: opts.accountId,
+                    session_id: sessionId,
+                    auth_jwt: opts.authJwt,
+                }),
+            );
+        });
+
+        ws.addEventListener('message', (ev: MessageEvent) => {
+            if (settled) return;
+            let msg: RelayMessage & { machines?: Array<Record<string, unknown>> };
+            try {
+                const raw = typeof ev.data === 'string' ? ev.data : String(ev.data);
+                msg = JSON.parse(raw);
+            } catch {
+                return;
+            }
+            if (msg.type === 'register_ack') {
+                settled = true;
+                clearTimeout(timer);
+                if (msg.ok === false) {
+                    resolve({ ok: false, error: msg.error || 'The relay rejected the session.' });
+                    try {
+                        ws.close();
+                    } catch {
+                        /* ignore */
+                    }
+                    return;
+                }
+                const machines = (msg.machines || []).map((m) => ({
+                    deviceId: String(m.device_id ?? ''),
+                    machineName: String(m.machine_name ?? ''),
+                    status: String(m.status ?? 'offline'),
+                    lastSeenAt: (m.last_seen_at as string) ?? null,
+                    online: m.status === 'online',
+                }));
+                resolve({
+                    ok: true,
+                    session: { ws, close: () => ws.close() },
+                    machines,
+                });
+            }
+        });
+
+        ws.addEventListener('error', () => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
+            resolve({ ok: false, error: 'Could not connect to the Tripplet relay.' });
+        });
+    });
+}
+
+/** List the paired machines for this account. */
+export async function relayListMachines(opts: {
+    accountId: string;
+    authJwt?: string;
+}): Promise<{ ok: boolean; machines: RelayMachine[]; error?: string }> {
+    const r = await openClientSession(opts);
+    if (!r.ok) return { ok: false, machines: [], error: r.error };
+    r.session.close();
+    return { ok: true, machines: r.machines };
+}
+
+/** Unbind a device from this account (does not touch the device itself). */
+export function relayUnpair(opts: {
+    accountId: string;
+    authJwt?: string;
+    deviceId: string;
+}): Promise<{ ok: boolean; error?: string }> {
+    return new Promise((resolve) => {
+        openClientSession(opts).then((r) => {
+            if (!r.ok) {
+                resolve({ ok: false, error: r.error });
+                return;
+            }
+            const { ws, close } = r.session;
+            const reqId = randomUUID();
+            const timer = setTimeout(() => {
+                close();
+                resolve({ ok: false, error: 'The relay did not respond in time.' });
+            }, PAIR_TIMEOUT_MS);
+            ws.addEventListener('message', (ev: MessageEvent) => {
+                let msg: RelayMessage;
+                try {
+                    const raw = typeof ev.data === 'string' ? ev.data : String(ev.data);
+                    msg = JSON.parse(raw);
+                } catch {
+                    return;
+                }
+                if (msg.type === 'unpair_result' && (msg as { id?: string }).id === reqId) {
+                    clearTimeout(timer);
+                    close();
+                    resolve({ ok: !!msg.ok, error: msg.ok ? undefined : msg.error });
+                }
+            });
+            ws.send(
+                JSON.stringify({
+                    type: 'unpair',
+                    id: reqId,
+                    account_id: opts.accountId,
+                    device_id: opts.deviceId,
+                }),
+            );
+        });
+    });
+}
+
+export interface ExecStreamEvent {
+    stream: 'stdout' | 'stderr';
+    data: string;
+}
+
+export interface ExecResult {
+    ok: boolean;
+    exitCode: number | null;
+    error?: string;
+}
+
+const EXEC_TIMEOUT_MS = 120_000;
+
+/** Run a shell command on a paired device and stream its output. */
+export function relayExec(opts: {
+    accountId: string;
+    authJwt?: string;
+    deviceId: string;
+    command: string;
+    password: string;
+    onStream?: (ev: ExecStreamEvent) => void;
+}): Promise<ExecResult> {
+    return new Promise((resolve) => {
+        openClientSession(opts).then((r) => {
+            if (!r.ok) {
+                resolve({ ok: false, exitCode: null, error: r.error });
+                return;
+            }
+            const { ws, close } = r.session;
+            const opId = randomUUID();
+            const sessionId = randomUUID();
+
+            const timer = setTimeout(() => {
+                close();
+                resolve({ ok: false, exitCode: null, error: 'The device did not respond in time.' });
+            }, EXEC_TIMEOUT_MS);
+
+            ws.addEventListener('message', (ev: MessageEvent) => {
+                let msg: RelayMessage & { stream?: string; data?: string; exit_code?: number };
+                try {
+                    const raw = typeof ev.data === 'string' ? ev.data : String(ev.data);
+                    msg = JSON.parse(raw);
+                } catch {
+                    return;
+                }
+                if (msg.type === 'stream' && (msg.stream === 'stdout' || msg.stream === 'stderr')) {
+                    opts.onStream?.({ stream: msg.stream, data: msg.data || '' });
+                } else if (msg.type === 'result') {
+                    clearTimeout(timer);
+                    close();
+                    resolve({
+                        ok: !!msg.ok,
+                        exitCode: typeof msg.exit_code === 'number' ? msg.exit_code : null,
+                        error: msg.ok ? undefined : msg.error,
+                    });
+                } else if (msg.type === 'error') {
+                    clearTimeout(timer);
+                    close();
+                    resolve({ ok: false, exitCode: null, error: msg.message || 'Device error.' });
+                }
+            });
+
+            ws.send(
+                JSON.stringify({
+                    type: 'exec',
+                    id: opId,
+                    device_id: opts.deviceId,
+                    session_id: sessionId,
+                    auth: { password: opts.password },
+                    op: { kind: 'bash', command: opts.command },
+                }),
+            );
+        });
+    });
+}

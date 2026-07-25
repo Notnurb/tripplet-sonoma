@@ -36,6 +36,8 @@ const T_PAIRED = 'paired';
 const T_LIST_MACHINES = 'list_machines';
 const T_MACHINES_LIST = 'machines_list';
 const T_DEVICE_STATUS = 'device_status';
+const T_UNPAIR = 'unpair';
+const T_UNPAIR_RESULT = 'unpair_result';
 const T_ERROR = 'error';
 
 const ROLE_DEVICE = 'device';
@@ -107,6 +109,15 @@ function createSupabaseDb(supabase) {
       if (error) throw new Error(error.message);
       return data || null;
     },
+    async getMachine(deviceId) {
+      const { data, error } = await supabase
+        .from('machines')
+        .select('*')
+        .eq('device_id', deviceId)
+        .maybeSingle();
+      if (error) throw new Error(error.message);
+      return data || null;
+    },
     async listMachines(accountId) {
       const { data, error } = await supabase
         .from('machines')
@@ -166,31 +177,46 @@ function createSupabaseDb(supabase) {
   };
 }
 
-function createMemoryDb() {
-  const machines = new Map();
-  const sessions = new Map();
-  const logs = new Map();
+// Deno Deploy runs multiple isolates (per region) with NO shared process
+// memory — a plain in-process Map here would make "machines" invisible to
+// whichever isolate a given request happens to land on (this is exactly what
+// caused pairing/exec to work "sometimes"). Deno KV is Deploy's built-in
+// globally-consistent store, free on every plan, so machine/session/log rows
+// go there instead. Live WebSocket routing (the actual device/client sockets)
+// still can't be shared this way — see sendToDevice/sendToClient below, which
+// use BroadcastChannel to hop to whichever isolate holds the live socket.
+function createKvDb(kv) {
+  const machinesKey = (deviceId) => ['machines', deviceId];
+  const sessionsKey = (sessionId) => ['machine_sessions', sessionId];
+  const logsKey = (logId) => ['operation_logs', logId];
+
   return {
-    mode: 'memory',
+    mode: 'kv',
     async authenticate(jwt, accountIdHint) {
       const accountId = accountIdHint || (jwt ? `dev-${String(jwt).slice(0, 16)}` : null);
       if (!accountId) return { ok: false, error: 'dev mode requires account_id or auth_jwt' };
       return { ok: true, accountId };
     },
     async upsertMachineOnRegister(row) {
-      const existing = machines.get(row.device_id) || {};
+      const existing = (await kv.get(machinesKey(row.device_id))).value || {};
       const merged = Object.assign({ account_id: null, created_at: nowIso() }, existing, row);
-      machines.set(row.device_id, merged);
+      await kv.set(machinesKey(row.device_id), merged);
       return merged;
     },
     async getMachineByPairingCode(code) {
-      for (const row of machines.values()) if (row.pairing_code === code) return row;
+      for await (const entry of kv.list({ prefix: ['machines'] })) {
+        if (entry.value && entry.value.pairing_code === code) return entry.value;
+      }
       return null;
+    },
+    async getMachine(deviceId) {
+      return (await kv.get(machinesKey(deviceId))).value || null;
     },
     async listMachines(accountId) {
       const out = [];
-      for (const row of machines.values()) {
-        if (row.account_id === accountId) {
+      for await (const entry of kv.list({ prefix: ['machines'] })) {
+        const row = entry.value;
+        if (row && row.account_id === accountId) {
           out.push({
             device_id: row.device_id,
             machine_name: row.machine_name,
@@ -202,29 +228,32 @@ function createMemoryDb() {
       return out;
     },
     async setMachineStatus(deviceId, status) {
-      const row = machines.get(deviceId);
+      const row = (await kv.get(machinesKey(deviceId))).value;
       if (row) {
         row.status = status;
         row.last_seen_at = nowIso();
+        await kv.set(machinesKey(deviceId), row);
       }
     },
     async touchMachine(deviceId) {
-      const row = machines.get(deviceId);
+      const row = (await kv.get(machinesKey(deviceId))).value;
       if (row) {
         row.status = 'online';
         row.last_seen_at = nowIso();
+        await kv.set(machinesKey(deviceId), row);
       }
     },
     async bindMachineAccount(deviceId, accountId, machineName) {
-      const row = machines.get(deviceId);
+      const row = (await kv.get(machinesKey(deviceId))).value;
       if (row) {
         row.account_id = accountId;
         if (machineName) row.machine_name = machineName;
+        await kv.set(machinesKey(deviceId), row);
       }
     },
     async insertOperationLog(row) {
       const logId = crypto.randomUUID();
-      logs.set(logId, {
+      await kv.set(logsKey(logId), {
         log_id: logId,
         device_id: row.device_id,
         account_id: row.account_id,
@@ -237,14 +266,15 @@ function createMemoryDb() {
       return logId;
     },
     async finishOperationLog(logId, fields) {
-      const row = logs.get(logId);
+      const row = (await kv.get(logsKey(logId))).value;
       if (row) {
         row.exit_code = fields.exit_code;
         row.finished_at = fields.finished_at;
+        await kv.set(logsKey(logId), row);
       }
     },
     async upsertMachineSession(row) {
-      sessions.set(row.session_id, Object.assign({}, row));
+      await kv.set(sessionsKey(row.session_id), Object.assign({}, row));
     },
   };
 }
@@ -254,7 +284,6 @@ function createMemoryDb() {
 // ---------------------------------------------------------------------------
 const deviceSockets = new Map();
 const clientSockets = new Map();
-const deviceTokens = new Map();
 const opLogIds = new Map();
 const socketMeta = new WeakMap(); // ws -> mutable per-connection state
 
@@ -284,19 +313,69 @@ function sendError(ws, message, id) {
   send(ws, out);
 }
 
+// ---------------------------------------------------------------------------
+// Cross-isolate routing. Deno Deploy runs one isolate per region with no
+// shared memory — deviceSockets/clientSockets only ever hold the sockets that
+// literally connected to THIS isolate. A device on the "ord" isolate and a
+// client request landed on "ams" would otherwise never find each other. This
+// BroadcastChannel fans a message out to every isolate; only the one that
+// actually holds the target socket (checked locally) delivers it — so the
+// isolate that already has it locally just sends directly and never
+// broadcasts, which avoids double delivery.
+// ---------------------------------------------------------------------------
+const bc = new BroadcastChannel('opensonoma-relay');
+bc.onmessage = (ev) => {
+  const msg = ev.data;
+  if (!msg || typeof msg !== 'object') return;
+  if (msg.kind === 'to-device') {
+    const ws = deviceSockets.get(msg.deviceId);
+    if (ws) send(ws, msg.frame);
+  } else if (msg.kind === 'to-client') {
+    const ws = clientSockets.get(msg.sessionId);
+    if (ws) send(ws, msg.frame);
+  } else if (msg.kind === 'to-account') {
+    for (const ws of clientSockets.values()) {
+      if (meta(ws).accountId === msg.accountId) send(ws, msg.frame);
+    }
+  }
+};
+
+function sendToDevice(deviceId, frame) {
+  const ws = deviceSockets.get(deviceId);
+  if (ws) {
+    send(ws, frame);
+    return;
+  }
+  bc.postMessage({ kind: 'to-device', deviceId, frame });
+}
+
+function sendToClient(sessionId, frame) {
+  const ws = clientSockets.get(sessionId);
+  if (ws) {
+    send(ws, frame);
+    return;
+  }
+  bc.postMessage({ kind: 'to-client', sessionId, frame });
+}
+
 function broadcastToAccount(accountId, obj) {
   if (!accountId) return;
-  for (const ws of clientSockets.values()) {
-    if (meta(ws).accountId === accountId) send(ws, obj);
-  }
+  // Deno Deploy's BroadcastChannel delivers to every isolate INCLUDING the
+  // sender, so posting once and letting the shared bc.onmessage handler (which
+  // checks local clientSockets) do the matching send covers this isolate's
+  // own sessions too — no separate local loop needed here.
+  bc.postMessage({ kind: 'to-account', accountId, frame: obj });
 }
 
 function liveMachineView(m) {
+  // `status`/`last_seen_at` come from Deno KV, kept fresh by register/
+  // heartbeat/close across every isolate — no need to check a local socket
+  // map that only reflects this one isolate's connections.
   const sock = deviceSockets.get(m.device_id);
   return {
     device_id: m.device_id,
     machine_name: m.machine_name,
-    status: sock ? 'online' : m.status,
+    status: m.status,
     last_seen_at: m.last_seen_at,
     e2e_pubkey: (sock && meta(sock).e2ePubKey) || m.e2e_pubkey || null,
   };
@@ -305,9 +384,7 @@ function liveMachineView(m) {
 function forwardToClient(deviceWs, msg) {
   const sessionId = msg.session_id;
   if (!sessionId) return;
-  const client = clientSockets.get(sessionId);
-  if (!client) return;
-  send(client, Object.assign({}, msg, { device_id: meta(deviceWs).deviceId }));
+  sendToClient(sessionId, Object.assign({}, msg, { device_id: meta(deviceWs).deviceId }));
 }
 
 // ---------------------------------------------------------------------------
@@ -389,13 +466,21 @@ async function handleDeviceRegister(ws, msg) {
     return;
   }
 
-  const known = deviceTokens.get(deviceId);
-  if (known && known !== token) {
+  // device_token mismatch must be checked against KV (cross-isolate), not a
+  // local Map — a device re-registering on a different region's isolate would
+  // otherwise never see its own prior token and mismatch detection would
+  // silently do nothing.
+  let existingRow = null;
+  try {
+    existingRow = await db.getMachine(deviceId);
+  } catch (e) {
+    log('getMachine (register) failed:', e.message);
+  }
+  if (existingRow && existingRow.device_token && existingRow.device_token !== token) {
     sendError(ws, 'device_token mismatch');
     ws.close();
     return;
   }
-  if (!known) deviceTokens.set(deviceId, token);
 
   let row = null;
   try {
@@ -404,6 +489,8 @@ async function handleDeviceRegister(ws, msg) {
       machine_name: msg.machine_name || deviceId,
       pairing_code: msg.pairing_code || null,
       password_hash: msg.password_hash || null,
+      device_token: token,
+      e2e_pubkey: msg.e2e_pubkey || null,
       status: 'online',
       last_seen_at: nowIso(),
     });
@@ -563,17 +650,50 @@ async function handleClientMessage(ws, msg) {
       await onClientListMachines(ws, msg);
       break;
     case T_EXEC:
-      forwardToDevice(ws, msg, T_EXEC);
+      await forwardToDevice(ws, msg, T_EXEC);
       break;
     case T_UNLOCK:
-      forwardToDevice(ws, msg, T_UNLOCK);
+      await forwardToDevice(ws, msg, T_UNLOCK);
       break;
     case T_CANCEL:
-      forwardToDevice(ws, msg, T_CANCEL);
+      await forwardToDevice(ws, msg, T_CANCEL);
+      break;
+    case T_UNPAIR:
+      await onClientUnpair(ws, msg);
       break;
     default:
       break;
   }
+}
+
+async function onClientUnpair(ws, msg) {
+  const deviceId = msg.device_id;
+  const m = meta(ws);
+  if (!deviceId) {
+    send(ws, { type: T_UNPAIR_RESULT, id: msg.id, ok: false, error: 'missing device_id' });
+    return;
+  }
+  let machine = null;
+  try {
+    machine = await db.getMachine(deviceId);
+  } catch (e) {
+    log('getMachine failed:', e.message);
+  }
+  if (!machine || machine.account_id !== m.accountId) {
+    send(ws, { type: T_UNPAIR_RESULT, id: msg.id, ok: false, error: 'not authorized for this device' });
+    return;
+  }
+  try {
+    await db.bindMachineAccount(deviceId, null, null);
+  } catch (e) {
+    send(ws, { type: T_UNPAIR_RESULT, id: msg.id, ok: false, error: 'failed to unpair' });
+    return;
+  }
+  const localDeviceWs = deviceSockets.get(deviceId);
+  if (localDeviceWs) meta(localDeviceWs).accountId = null;
+  sendToDevice(deviceId, { type: T_PAIRED, account_id: null, machine_name: machine.machine_name });
+  send(ws, { type: T_UNPAIR_RESULT, id: msg.id, ok: true, device_id: deviceId });
+  log(`unpaired device ${deviceId} from account ${m.accountId}`);
 }
 
 async function onClientPair(ws, msg) {
@@ -604,14 +724,14 @@ async function onClientPair(ws, msg) {
     return;
   }
 
-  const deviceWs = deviceSockets.get(machine.device_id);
-  const online = !!deviceWs;
-  if (deviceWs) {
-    const dm = meta(deviceWs);
+  const online = machine.status === 'online';
+  const localDeviceWs = deviceSockets.get(machine.device_id);
+  if (localDeviceWs) {
+    const dm = meta(localDeviceWs);
     dm.accountId = m.accountId;
     dm.machineName = machineName;
-    send(deviceWs, { type: T_PAIRED, account_id: m.accountId, machine_name: machineName });
   }
+  sendToDevice(machine.device_id, { type: T_PAIRED, account_id: m.accountId, machine_name: machineName });
 
   send(ws, {
     type: T_PAIR_RESULT,
@@ -620,7 +740,7 @@ async function onClientPair(ws, msg) {
     device_id: machine.device_id,
     machine_name: machineName,
     online,
-    e2e_pubkey: (deviceWs && meta(deviceWs).e2ePubKey) || null,
+    e2e_pubkey: (localDeviceWs && meta(localDeviceWs).e2ePubKey) || machine.e2e_pubkey || null,
   });
   log(`paired device ${machine.device_id} -> account ${m.accountId}`);
 }
@@ -635,7 +755,11 @@ async function onClientListMachines(ws, msg) {
   send(ws, { type: T_MACHINES_LIST, machines: machines.map(liveMachineView) });
 }
 
-function forwardToDevice(clientWs, msg, type) {
+// Async + KV-backed rather than a local deviceSockets lookup: the client
+// request for this op can land on any isolate, so "is it offline" and "does
+// this account own it" must be answered from the cross-isolate KV row, not
+// from whatever this one isolate happens to have a local socket for.
+async function forwardToDevice(clientWs, msg, type) {
   const deviceId = msg.device_id;
   const sessionId = meta(clientWs).sessionId;
   if (!deviceId) {
@@ -643,8 +767,15 @@ function forwardToDevice(clientWs, msg, type) {
     return;
   }
 
-  const deviceWs = deviceSockets.get(deviceId);
-  if (!deviceWs) {
+  let machine = null;
+  try {
+    machine = await db.getMachine(deviceId);
+  } catch (e) {
+    log('getMachine (forwardToDevice) failed:', e.message);
+  }
+
+  const offline = !machine || machine.status !== 'online';
+  if (offline) {
     if (type === T_EXEC) {
       send(clientWs, {
         type: T_RESULT,
@@ -674,12 +805,11 @@ function forwardToDevice(clientWs, msg, type) {
     return;
   }
 
-  const dm = meta(deviceWs);
-  if (!dm.accountId) {
+  if (!machine.account_id) {
     sendError(clientWs, 'device not paired', msg.id);
     return;
   }
-  if (dm.accountId !== meta(clientWs).accountId) {
+  if (machine.account_id !== meta(clientWs).accountId) {
     sendError(clientWs, 'not authorized for this device', msg.id);
     return;
   }
@@ -700,7 +830,7 @@ function forwardToDevice(clientWs, msg, type) {
   } else {
     out = { type: T_CANCEL, id: msg.id, session_id: sessionId, target_id: msg.target_id };
   }
-  send(deviceWs, out);
+  sendToDevice(deviceId, out);
 }
 
 // ---------------------------------------------------------------------------
@@ -795,8 +925,9 @@ if (TRIPPLET_JWT_SECRET) {
 
 async function openDb() {
   if (!(SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY)) {
-    log('In-memory persistence (no Supabase configured).');
-    return createMemoryDb();
+    log('Deno KV persistence (no Supabase configured) — consistent across regions/isolates.');
+    const kv = await Deno.openKv();
+    return createKvDb(kv);
   }
   const { createClient } = await import('npm:@supabase/supabase-js@2');
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {

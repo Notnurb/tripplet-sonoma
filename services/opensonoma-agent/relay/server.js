@@ -41,6 +41,8 @@ const T_PAIRED = 'paired';
 const T_LIST_MACHINES = 'list_machines';
 const T_MACHINES_LIST = 'machines_list';
 const T_DEVICE_STATUS = 'device_status';
+const T_UNPAIR = 'unpair';
+const T_UNPAIR_RESULT = 'unpair_result';
 const T_ERROR = 'error';
 
 const ROLE_DEVICE = 'device';
@@ -159,6 +161,16 @@ function createSupabaseDb(supabase) {
       return data || null;
     },
 
+    async getMachine(deviceId) {
+      const { data, error } = await supabase
+        .from('machines')
+        .select('*')
+        .eq('device_id', deviceId)
+        .maybeSingle();
+      if (error) throw new Error(error.message);
+      return data || null;
+    },
+
     async listMachines(accountId) {
       const { data, error } = await supabase
         .from('machines')
@@ -267,6 +279,10 @@ function createMemoryDb() {
         if (row.pairing_code === code) return row;
       }
       return null;
+    },
+
+    async getMachine(deviceId) {
+      return machines.get(deviceId) || null;
     },
 
     async listMachines(accountId) {
@@ -674,10 +690,44 @@ async function handleClientMessage(ws, msg) {
     case T_CANCEL:
       forwardToDevice(ws, msg, T_CANCEL);
       break;
+    case T_UNPAIR:
+      await onClientUnpair(ws, msg);
+      break;
     default:
       // Unknown client frame — ignore.
       break;
   }
+}
+
+async function onClientUnpair(ws, msg) {
+  const deviceId = msg.device_id;
+  if (!deviceId) {
+    send(ws, { type: T_UNPAIR_RESULT, id: msg.id, ok: false, error: 'missing device_id' });
+    return;
+  }
+  let machine = null;
+  try {
+    machine = await db.getMachine(deviceId);
+  } catch (e) {
+    log('getMachine failed:', e.message);
+  }
+  if (!machine || machine.account_id !== ws._accountId) {
+    send(ws, { type: T_UNPAIR_RESULT, id: msg.id, ok: false, error: 'not authorized for this device' });
+    return;
+  }
+  try {
+    await db.bindMachineAccount(deviceId, null, null);
+  } catch (e) {
+    send(ws, { type: T_UNPAIR_RESULT, id: msg.id, ok: false, error: 'failed to unpair' });
+    return;
+  }
+  const deviceWs = deviceSockets.get(deviceId);
+  if (deviceWs) {
+    deviceWs._accountId = null;
+    send(deviceWs, { type: T_PAIRED, account_id: null, machine_name: deviceWs._machineName });
+  }
+  send(ws, { type: T_UNPAIR_RESULT, id: msg.id, ok: true, device_id: deviceId });
+  log(`unpaired device ${deviceId} from account ${ws._accountId}`);
 }
 
 async function onClientPair(ws, msg) {

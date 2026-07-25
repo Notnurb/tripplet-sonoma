@@ -78,6 +78,22 @@ export const SONOMA_TOOLS = [
     {
         type: 'function',
         function: {
+            name: 'run_on_machine',
+            description:
+                "Run a shell command on the user's own paired computer (a real machine running the OpenSonoma agent, connected via @mention in the composer). Only call this when the user has @mentioned a paired machine in their message — never guess a device_id. The user is always shown a permission prompt (Yes / Always Accept / No) before the command actually runs; if they decline, treat it as a normal cancelled command.",
+            parameters: {
+                type: 'object',
+                properties: {
+                    device_id: { type: 'string', description: "The paired machine's device_id, from the @mention context given in the system prompt." },
+                    command: { type: 'string', description: 'Shell command to run on that machine.' },
+                },
+                required: ['device_id', 'command'],
+            },
+        },
+    },
+    {
+        type: 'function',
+        function: {
             name: 'search_past_chats',
             description:
                 "Search this user's own earlier conversations with you and read back matching excerpts. Use it whenever they refer to something from a previous chat (\"what did we decide about X\", \"the project I mentioned\", \"continue where we left off\") instead of guessing or claiming you cannot remember. Leave the query empty to list their most recent conversations.",
@@ -202,6 +218,17 @@ export async function runTool(call: ToolCall, ctx: ToolContext = {}): Promise<st
                 command: String(call.args.command ?? ''),
                 executed_in: 'tripplet-sandboxed-linux',
                 note: 'Command dispatched to the user\'s in-browser Linux VM; its real stdout is shown to the user.',
+            });
+        }
+        case 'run_on_machine': {
+            // Execution happens client-side, after the user approves an inline
+            // permission prompt (Yes / Always Accept / No). The browser then
+            // calls /api/connect/exec, which runs the command on the paired
+            // device over the relay and streams real stdout back into the chat.
+            return JSON.stringify({
+                device_id: String(call.args.device_id ?? ''),
+                command: String(call.args.command ?? ''),
+                note: "Dispatched to the user's paired machine pending their approval; real stdout is shown to the user once they approve.",
             });
         }
         case 'search_past_chats': {

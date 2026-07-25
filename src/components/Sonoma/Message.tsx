@@ -259,7 +259,11 @@ export interface SonomaActivity {
     /** Client-side wall clock, set when the card first appears / completes. */
     startedAt?: number;
     elapsedMs?: number;
+    /** run_on_machine only: gates real execution behind an in-chat prompt. */
+    permission?: 'pending' | 'approved' | 'denied';
 }
+
+export type MachineDecision = 'yes' | 'always' | 'no';
 
 /** 'composio_GITHUB_CREATE_AN_ISSUE' → { app: 'Github', action: 'create an issue' } */
 function connectorParts(tool: string): { app: string; action: string } {
@@ -285,6 +289,8 @@ function ActivityLabel({ a }: { a: SonomaActivity }) {
             return <>Running Python</>;
         case 'run_bash':
             return <>Running bash</>;
+        case 'run_on_machine':
+            return <>Running on <span style={{ color: 'var(--sonoma-accent-2)' }}>{String(a.args.machine_name ?? 'your machine')}</span></>;
         case 'search_past_chats': {
             const q = String(a.args.query ?? '').trim();
             return q
@@ -298,9 +304,118 @@ function ActivityLabel({ a }: { a: SonomaActivity }) {
     }
 }
 
-function ActivityCard({ a }: { a: SonomaActivity }) {
+function MachinePermissionCard({
+    a,
+    onDecision,
+}: {
+    a: SonomaActivity;
+    onDecision: (activityId: string, decision: MachineDecision) => void;
+}) {
+    const [confirmingAlways, setConfirmingAlways] = useState(false);
+    const machineName = String(a.args.machine_name ?? 'your machine');
+    const command = String(a.args.command ?? '');
+
+    return (
+        <div
+            className="my-1.5 rounded-[12px]"
+            style={{
+                background: 'var(--sonoma-surface)',
+                border: '1px solid color-mix(in oklch, var(--sonoma-accent) 40%, var(--sonoma-border))',
+                padding: '10px 12px',
+            }}
+        >
+            <div className="flex items-center gap-2 text-[13px]" style={{ color: 'var(--sonoma-ink)' }}>
+                <SonomaTerminal size={14} />
+                <span>
+                    Run on <span style={{ color: 'var(--sonoma-accent-2)' }}>{machineName}</span>?
+                </span>
+            </div>
+            <pre
+                className="mt-2 max-h-[140px] overflow-auto text-[12px]"
+                style={{
+                    fontFamily: 'var(--font-mono)',
+                    background: 'oklch(0.21 0.018 50)',
+                    color: 'oklch(0.94 0.012 75)',
+                    padding: 10,
+                    borderRadius: 10,
+                }}
+            >
+                {command}
+            </pre>
+
+            {!confirmingAlways ? (
+                <div className="mt-2.5 flex items-center gap-2">
+                    <button
+                        type="button"
+                        onClick={() => onDecision(a.id, 'yes')}
+                        className="rounded-full px-3.5 py-1.5 text-[12.5px] font-medium"
+                        style={{ background: 'var(--sonoma-accent)', color: 'var(--sonoma-accent-ink, #fff)' }}
+                    >
+                        Yes
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => setConfirmingAlways(true)}
+                        className="rounded-full px-3.5 py-1.5 text-[12.5px] font-medium"
+                        style={{ border: '1px solid var(--sonoma-border)', color: 'var(--sonoma-ink-2)', background: 'transparent' }}
+                    >
+                        Always Accept
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => onDecision(a.id, 'no')}
+                        className="rounded-full px-3.5 py-1.5 text-[12.5px] font-medium"
+                        style={{ border: '1px solid var(--sonoma-border)', color: 'var(--destructive)', background: 'transparent' }}
+                    >
+                        No
+                    </button>
+                </div>
+            ) : (
+                <div
+                    className="mt-2.5 rounded-[10px] p-2.5"
+                    style={{ background: 'var(--sonoma-bg-2)', border: '1px solid var(--sonoma-border)' }}
+                >
+                    <div className="text-[12.5px]" style={{ color: 'var(--sonoma-ink)' }}>
+                        Always allow Sonoma to run commands on <b>{machineName}</b> without asking, for the
+                        rest of this session?
+                    </div>
+                    <div className="mt-2 flex items-center gap-2">
+                        <button
+                            type="button"
+                            onClick={() => onDecision(a.id, 'always')}
+                            className="rounded-full px-3.5 py-1.5 text-[12.5px] font-medium"
+                            style={{ background: 'var(--sonoma-accent)', color: 'var(--sonoma-accent-ink, #fff)' }}
+                        >
+                            Confirm
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setConfirmingAlways(false)}
+                            className="rounded-full px-3.5 py-1.5 text-[12.5px] font-medium"
+                            style={{ border: '1px solid var(--sonoma-border)', color: 'var(--sonoma-ink-2)', background: 'transparent' }}
+                        >
+                            Cancel
+                        </button>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+}
+
+function ActivityCard({
+    a,
+    onMachineDecision,
+}: {
+    a: SonomaActivity;
+    onMachineDecision?: (activityId: string, decision: MachineDecision) => void;
+}) {
     const [open, setOpen] = useState(false);
     const running = a.status === 'running';
+
+    if (a.tool === 'run_on_machine' && a.permission === 'pending' && onMachineDecision) {
+        return <MachinePermissionCard a={a} onDecision={onMachineDecision} />;
+    }
 
     let body: React.ReactNode = null;
     if (a.tool === 'web_search' && a.result && typeof a.result === 'object') {
@@ -357,10 +472,12 @@ function ActivityCard({ a }: { a: SonomaActivity }) {
                 {r.error ? `Error: ${r.error}` : r.text}
             </div>
         );
-    } else if (a.tool === 'run_python' || a.tool === 'run_bash') {
-        const code = String(a.tool === 'run_bash' ? a.args.command ?? '' : a.args.code ?? '');
+    } else if (a.tool === 'run_python' || a.tool === 'run_bash' || a.tool === 'run_on_machine') {
+        const code = String(a.tool === 'run_python' ? a.args.code ?? '' : a.args.command ?? '');
         const out =
-            a.result && typeof a.result === 'object'
+            a.permission === 'denied'
+                ? 'Command declined.'
+                : a.result && typeof a.result === 'object'
                 ? (a.result as { output?: string; error?: string }).output ??
                   (a.result as { error?: string }).error ??
                   ''
@@ -473,7 +590,7 @@ function ActivityCard({ a }: { a: SonomaActivity }) {
                 >
                     {a.tool === 'web_search' || a.tool === 'fetch_url' || a.tool.startsWith('composio_') ? (
                         <SonomaBrowse size={14} />
-                    ) : a.tool === 'run_bash' || a.tool === 'run_python' ? (
+                    ) : a.tool === 'run_bash' || a.tool === 'run_python' || a.tool === 'run_on_machine' ? (
                         <SonomaTerminal size={14} />
                     ) : (
                         <SonomaReason size={14} />
@@ -515,6 +632,8 @@ interface AssistantMessageProps {
     onRegenerate?: () => void;
     /** Render the body in white — used over the dark code-page background. */
     white?: boolean;
+    /** run_on_machine only: called when the user picks Yes / Always Accept / No. */
+    onMachineDecision?: (activityId: string, decision: MachineDecision) => void;
 }
 
 export function SonomaAssistantMessage({
@@ -525,6 +644,7 @@ export function SonomaAssistantMessage({
     isStreaming,
     onRegenerate,
     white,
+    onMachineDecision,
 }: AssistantMessageProps) {
     const [copied, setCopied] = useState(false);
     const [rated, setRated] = useState<'up' | 'down' | null>(null);
@@ -587,7 +707,7 @@ export function SonomaAssistantMessage({
             {activity.length > 0 && (
                 <div className="my-1.5 flex flex-col">
                     {activity.map((a) => (
-                        <ActivityCard key={a.id} a={a} />
+                        <ActivityCard key={a.id} a={a} onMachineDecision={onMachineDecision} />
                     ))}
                 </div>
             )}

@@ -68,7 +68,7 @@ export function mergeActivity(
     list: SonomaActivity[],
     ev: SonomaStreamEvent & { tool: string; id: string },
 ): SonomaActivity[] {
-    const isBash = ev.tool === 'run_bash';
+    const isBash = ev.tool === 'run_bash' || ev.tool === 'run_on_machine';
     const status: SonomaActivity['status'] =
         isBash ? 'running' : ev.status === 'done' ? 'done' : 'running';
     const now = Date.now();

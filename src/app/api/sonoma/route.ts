@@ -51,6 +51,11 @@ interface RouteBody {
     // user's in-browser Linux VM (client-side), so the server tool just
     // acknowledges and the client streams the real output into the card.
     sandbox?: boolean;
+    // The paired machine the user @mentioned in the composer, if any. Enables
+    // the `run_on_machine` tool for this turn and tells the model which
+    // device_id to target — the client still gates every actual command
+    // behind an inline Yes / Always Accept / No permission prompt.
+    machine?: { deviceId: string; machineName: string } | null;
     // Memory skill (settings toggle, default on). When enabled for a signed-in
     // user, stored memories are injected into the system prompt and, after the
     // exchange, big-pickle autonomously extracts new durable facts about the
@@ -101,7 +106,7 @@ export async function POST(req: NextRequest) {
     } catch {
         return new Response('Bad JSON', { status: 400 });
     }
-    const { messages, reason = false, browse = false, code = false, deepCode = false, sandbox = false, memory = true, pastChats = true, conversationId, page = 'chat', model, dev } = body;
+    const { messages, reason = false, browse = false, code = false, deepCode = false, sandbox = false, memory = true, pastChats = true, conversationId, page = 'chat', model, dev, machine = null } = body;
     const deepCodeLevel = isReasoningLevel(body.deepCodeLevel)
         ? body.deepCodeLevel
         : DEEP_CODE_DEFAULT_REASONING_LEVEL;
@@ -112,6 +117,7 @@ export async function POST(req: NextRequest) {
     const builtinTools = SONOMA_TOOLS.filter((t) => {
         if (t.function.name === 'run_bash') return sandbox;
         if (t.function.name === 'search_past_chats') return pastChatsOn;
+        if (t.function.name === 'run_on_machine') return !!userId && !!machine?.deviceId;
         return true;
     });
     // Connector (Composio) tools for the apps this user has linked in
@@ -247,7 +253,7 @@ export async function POST(req: NextRequest) {
             // guardrails), so they are dropped — same policy as the DeepCode
             // pipeline. The app's own client never sends them anyway.
             const history: Array<Record<string, unknown>> = [
-                { role: 'system', content: buildSonomaSystemPrompt(page, reason, browse, code, model, deepCode, sandbox, composio?.apps ?? [], userMemories, pastChatsOn) },
+                { role: 'system', content: buildSonomaSystemPrompt(page, reason, browse, code, model, deepCode, sandbox, composio?.apps ?? [], userMemories, pastChatsOn, userId && machine?.deviceId ? machine : null) },
                 ...messages.filter((m) => m.role !== 'system'),
             ];
 
