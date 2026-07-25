@@ -39,6 +39,9 @@ interface UIMessage {
     thinking?: string;
     activity: SonomaActivity[];
     files?: { id: string; name: string; preview?: string; type: 'image' | 'file' }[];
+    // Fed to the model as real context (so it can react to real command
+    // output) but not rendered as its own chat bubble.
+    hidden?: boolean;
 }
 
 function timeGreeting(): string {
@@ -195,6 +198,10 @@ export default function SonomaChatShell({ page = 'chat', conversationId, transpa
     const scrollRef = useRef<HTMLDivElement>(null);
     const bashRunRef = useRef<Set<string>>(new Set());
     const machineRunRef = useRef<Set<string>>(new Set());
+    // Points at the current runAgent — filled in after runAgent is declared —
+    // so execMachine (declared earlier) can trigger a real follow-up turn once
+    // a command's actual output comes back, without a circular dependency.
+    const runAgentRef = useRef<(history: UIMessage[], assistantId: string) => Promise<void>>(async () => {});
     // Paired OpenSonoma machines, for the composer's @mention list and the
     // Manage panel. Refetched whenever Manage closes (pair/unpair changes it).
     const [pairedMachines, setPairedMachines] = useState<{ deviceId: string; machineName: string }[]>([]);
@@ -402,12 +409,36 @@ export default function SonomaChatShell({ page = 'chat', conversationId, transpa
                     out += (out ? '\n' : '') + `Error: ${e instanceof Error ? e.message : 'exec failed'}`;
                 })
                 .finally(() => {
-                    setMessages((prev) => prev.map((m) =>
-                        m.id === assistantId ? { ...m, activity: finishBashActivity(m.activity, activityId, out) } : m,
-                    ));
+                    // The model already answered before this real output came
+                    // back (it's dispatched client-side, like run_bash) — so
+                    // patching the activity card alone would leave the output
+                    // shown only in the collapsed card, never actually read or
+                    // reacted to by the model. Feed it back as a real turn.
+                    const hiddenId = newId('u');
+                    const followUpId = newId('a');
+                    setMessages((prev) => {
+                        const patched = prev.map((m) =>
+                            m.id === assistantId ? { ...m, activity: finishBashActivity(m.activity, activityId, out) } : m,
+                        );
+                        const hiddenMsg: UIMessage = {
+                            id: hiddenId,
+                            role: 'user',
+                            content: `[Real output of running \`${command}\` on the paired machine]\n\n${out || '(no output)'}`,
+                            activity: [],
+                            hidden: true,
+                        };
+                        const followUp: UIMessage = { id: followUpId, role: 'assistant', content: '', model, activity: [] };
+                        return [...patched, hiddenMsg, followUp];
+                    });
+                    setTimeout(() => {
+                        setMessages((current) => {
+                            void runAgentRef.current(current.slice(0, -1), followUpId);
+                            return current;
+                        });
+                    }, 0);
                 });
         },
-        [],
+        [model],
     );
 
     // In-page password dialog (never a native window.prompt) — shown when a
@@ -604,6 +635,10 @@ export default function SonomaChatShell({ page = 'chat', conversationId, transpa
         },
         [browse, reason, codeMode, deepCode, deepCodeLevel, page, model, devOverride, sandboxEnabled, memoryEnabled, pastChatsEnabled, mentionedMachine, execBash, execMachine],
     );
+
+    useEffect(() => {
+        runAgentRef.current = runAgent;
+    }, [runAgent]);
 
     const handleSend = useCallback(async () => {
         if (OUTAGE_ACTIVE && !forceEnabled) return;
@@ -823,6 +858,7 @@ export default function SonomaChatShell({ page = 'chat', conversationId, transpa
 
                         {!empty &&
                             messages.map((m, i) => {
+                                if (m.hidden) return null;
                                 if (m.role === 'user') {
                                     return (
                                         <SonomaUserMessage
