@@ -67,16 +67,6 @@ export function Hero() {
                 <CopyInstallCommand className="mt-6 md:mt-9" />
             </div>
 
-            <div className="absolute bottom-8 left-8 hidden items-center gap-3 md:flex">
-                <span className="flex h-10 w-10 items-center justify-center rounded-full border border-white/20">
-                    <span className="block h-px w-3.5 bg-white/70" />
-                </span>
-                <span className="text-xs leading-tight text-white/60">
-                    Experience
-                    <br />
-                    with sound
-                </span>
-            </div>
         </section>
     )
 }
