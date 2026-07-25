@@ -34,7 +34,7 @@ export default function UserMenu() {
                         <AvatarImage src={user.image} alt={user.name || 'User'} />
                         <AvatarFallback className="bg-primary/20 text-primary text-xs">{initials}</AvatarFallback>
                     </Avatar>
-                    <span className="text-sm font-medium text-foreground hidden sm:inline-block max-w-[100px] truncate">
+                    <span className="text-sm font-medium text-white hidden sm:inline-block max-w-[100px] truncate">
                         {user.name || 'User'}
                     </span>
                 </div>

@@ -79,6 +79,28 @@ date of change to `main`.
 - **Web search works with zero API keys** via a keyless DuckDuckGo fallback.
 - Sandbox Linux VM pre-boots in the background so the first `run_bash` is warm.
 - Activity cards show real tool timing (`done · 1.2s`).
+- **Added `/cli`**, a marketing landing page for the Astrocode CLI (hero with
+  a copy-to-clipboard install command, scroll-parallax quote section). Linked
+  from the shared `GlassNav` pill nav and the footer's Product column.
+- **`curl -fsSL https://getsonoma.lol/installcli | bash` now actually works.**
+  The Astrocode CLI source is vendored into `services/astrocode-cli/` (same
+  pattern as the OpenSonoma installer) and bundled into
+  `public/astrocode.tar.gz` on `prebuild`. `public/installcli.sh` finds a
+  Node ≥18.17 on the machine, downloads the tarball, unpacks it to a
+  persistent `~/.astrocode/cli`, and hands off to Astrocode's own installer to
+  put `astrocode`/`astro` shims on PATH; `--uninstall` cleans up the source
+  copy too. Served at the extensionless `/installcli` route. Verified with a
+  real `curl | bash` run into an isolated `$HOME`.
+- **Astrocode CLI sessions now survive a restart**, not just one process.
+  `apiFetch` previously reported "run /login again" on any 401 — even one the
+  local clock didn't predict (skew, or a token minted moments before restart)
+  — even though a perfectly good 30-day refresh token was on disk. It now
+  retries once with a forced refresh before giving up; only an actually-dead
+  refresh token or an explicit `/logout` ends the session. Two new tests cover
+  both outcomes (`services/astrocode-cli/test/api.test.js`).
+- Nav bar: the brand wordmark + globe icon (`GlassNav`) and the signed-in
+  username in `UserMenu` are now pinned to white so they stay legible
+  regardless of the nav's light/dark `tone`.
 
 ### Architecture
 - **Removed a legacy third-party inference/search provider across the whole

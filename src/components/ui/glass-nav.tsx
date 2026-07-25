@@ -51,8 +51,8 @@ export function GlassNav({ tone = 'auto' }: { tone?: 'dark' | 'auto' }) {
             >
                 <div className="flex items-center gap-8">
                     <Link href="/" className={cn('flex items-center gap-2', strong)}>
-                        <Globe size={24} aria-hidden="true" />
-                        <span className="text-lg font-semibold">{APP_NAME}</span>
+                        <Globe size={24} aria-hidden="true" className="text-white" />
+                        <span className="text-lg font-semibold text-white">{APP_NAME}</span>
                     </Link>
                     <div className="hidden items-center gap-8 md:flex">
                         {NAV_LINKS.map(({ label, href }) => (
