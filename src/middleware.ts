@@ -134,10 +134,11 @@ async function hasValidAuthCookie(request: NextRequest): Promise<boolean> {
 
 export const config = {
     matcher: [
-        // dmg: the Tripplet Work desktop download (/TrippletWork.dmg) is a
-        // static asset — without it here the middleware bounces signed-out
-        // visitors to /login instead of serving the file.
-        '/((?!_next|[^?]*\\.(?:html?|css|sh|gz|tgz|js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|docx?|xlsx?|zip|dmg|webmanifest|mp4|m4v|webm|mov)).*)',
+        // dmg/exe: the Tripplet Work desktop downloads (/TrippletWork.dmg,
+        // /TrippletWork-Setup.exe) are static assets — without them here the
+        // middleware bounces signed-out visitors to /login instead of serving
+        // the file, so the browser saves the login page as the "download".
+        '/((?!_next|[^?]*\\.(?:html?|css|sh|gz|tgz|js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|docx?|xlsx?|zip|dmg|exe|msi|webmanifest|mp4|m4v|webm|mov)).*)',
         '/(api|trpc)(.*)',
     ],
 }
