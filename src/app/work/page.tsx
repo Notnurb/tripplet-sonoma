@@ -11,6 +11,7 @@ const VIDEO_SRC =
 
 const DMG_URL = '/TrippletWork.dmg';
 const INSTALL_CMD = 'curl -fsSL https://www.tripplet.lol/installwork | bash';
+const WIN_INSTALLER_URL = '/TrippletWork-Setup.exe';
 
 type Platform = 'mac' | 'windows' | 'linux' | 'other';
 
@@ -95,8 +96,7 @@ function WaitlistForm({ platform }: { platform: Platform }) {
                 </p>
             )}
             <p className="mt-3 text-xs font-light text-white/60">
-                {platform === 'windows' ? 'Windows' : 'Linux'} is on the way — Tripplet Work is macOS
-                only today.
+                Linux is on the way — Tripplet Work is on macOS and Windows today.
             </p>
         </div>
     );
@@ -159,6 +159,34 @@ function MacDownload() {
     );
 }
 
+/**
+ * Windows install. Just a direct .exe download — no terminal route, since
+ * there's no Gatekeeper-style flow to route around on Windows. The app is
+ * ad-hoc built rather than code-signed (same posture as the Mac build, which
+ * is ad-hoc signed rather than notarized), so SmartScreen will flag it the
+ * same way Gatekeeper does on the Mac download.
+ */
+function WindowsDownload() {
+    return (
+        <div className="flex w-full max-w-xl flex-col items-center gap-4">
+            <a
+                href={WIN_INSTALLER_URL}
+                download
+                className="group inline-flex items-center gap-2 rounded-full bg-white px-7 py-3 text-sm font-medium text-black transition-opacity duration-200 hover:opacity-90"
+            >
+                <Download className="h-4 w-4 transition-transform duration-200 group-hover:translate-y-0.5" />
+                Download for Windows
+            </a>
+            <p className="max-w-md text-xs font-light leading-relaxed text-white/55">
+                Windows will warn that this is an unrecognized app — click{' '}
+                <span className="text-white/80">More info</span>, then{' '}
+                <span className="text-white/80">Run anyway</span>. That&apos;s SmartScreen being
+                cautious about a new publisher, not a sign anything&apos;s wrong.
+            </p>
+        </div>
+    );
+}
+
 export default function WorkPage() {
     const [platform, setPlatform] = useState<Platform | null>(null);
 
@@ -166,7 +194,7 @@ export default function WorkPage() {
         setPlatform(detectPlatform());
     }, []);
 
-    const needsWaitlist = platform === 'windows' || platform === 'linux';
+    const needsWaitlist = platform === 'linux';
 
     return (
         <section className="relative w-full h-screen overflow-hidden">
@@ -202,6 +230,8 @@ export default function WorkPage() {
                     >
                         {needsWaitlist ? (
                             <WaitlistForm platform={platform as Platform} />
+                        ) : platform === 'windows' ? (
+                            <WindowsDownload />
                         ) : (
                             <MacDownload />
                         )}
