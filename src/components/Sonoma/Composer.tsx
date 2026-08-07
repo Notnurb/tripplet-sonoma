@@ -59,6 +59,7 @@ interface SonomaComposerProps {
     // Show the Connectors (Composio apps) chip + menu. Opt-in so surfaces
     // like the /dev panel stay unchanged.
     connectors?: boolean;
+    buildWorkspace?: boolean;
 
     // Hide the attach button and ignore pasted/dropped files. For surfaces
     // where uploads can't go anywhere (e.g. the landing hero, which hands the
@@ -135,27 +136,23 @@ function DeepCodeChip({
     level,
     onLevelChange,
     compact,
+    buildWorkspace,
 }: {
     active: boolean;
     onClick: () => void;
     level: DeepCodeReasoningLevel;
     onLevelChange: (level: DeepCodeReasoningLevel) => void;
     compact?: boolean;
+    buildWorkspace?: boolean;
 }) {
     const [open, setOpen] = useState(false);
     const wrapRef = useRef<HTMLDivElement>(null);
     const idx = Math.max(0, DEEP_CODE_REASONING_LEVELS.indexOf(level));
     const [sliderValue, setSliderValue] = useState(idx);
     const sliderMax = DEEP_CODE_REASONING_LEVELS.length - 1;
-    const agenticStart = DEEP_CODE_REASONING_LEVELS.indexOf('max');
     const sliderPercent = (sliderValue / sliderMax) * 100;
-    const rgbStrength = Math.min(1, Math.max(0, (sliderValue - agenticStart) / (sliderMax - agenticStart)));
-    const rgbStops = [
-        ['#ff0000', 0],
-        ['#00ff00', 33],
-        ['#0000ff', 66],
-        ['#ff0000', 100],
-    ].map(([color, stop]) => `color-mix(in srgb, ${color} ${rgbStrength * 100}%, #3b82f6) ${stop}%`).join(', ');
+    const visualLevel = DEEP_CODE_REASONING_LEVELS[Math.min(sliderMax, Math.max(0, Math.round(sliderValue)))];
+    const isUltra = visualLevel === 'supercode';
 
     useEffect(() => setSliderValue(idx), [idx]);
 
@@ -169,7 +166,7 @@ function DeepCodeChip({
 
     return (
         <div ref={wrapRef} className="relative inline-flex items-center gap-0.5">
-            <ToolChip active={active} onClick={onClick} icon={<SonomaCode size={16} />} label="DeepCode" compact={compact} />
+            <ToolChip active={active} onClick={onClick} icon={<SonomaCode size={16} />} label={buildWorkspace ? 'Agentic' : level === 'supercode' ? 'Agentic' : 'DeepCode'} compact={compact} />
             <button
                 type="button"
                 onClick={() => setOpen((o) => !o)}
@@ -203,7 +200,9 @@ function DeepCodeChip({
                             Reasoning level
                         </span>
                         <span className="text-[12.5px] font-semibold" style={{ color: 'var(--sonoma-accent-2)' }}>
-                            {DEEP_CODE_REASONING_LEVEL_LABELS[level]}
+                            <span key={visualLevel} className="deepcode-level-label">
+                                {buildWorkspace && visualLevel === 'supercode' ? 'Ultra' : DEEP_CODE_REASONING_LEVEL_LABELS[visualLevel]}
+                            </span>
                         </span>
                     </div>
                     <input
@@ -215,21 +214,13 @@ function DeepCodeChip({
                         onChange={(e) => setSliderValue(Number(e.target.value))}
                         onPointerUp={() => {
                             const target = Math.round(sliderValue);
-                            const start = sliderValue;
-                            const began = performance.now();
-                            const animate = (now: number) => {
-                                const progress = Math.min(1, (now - began) / 180);
-                                const eased = 1 - Math.pow(1 - progress, 3);
-                                setSliderValue(start + (target - start) * eased);
-                                if (progress < 1) requestAnimationFrame(animate);
-                                else onLevelChange(DEEP_CODE_REASONING_LEVELS[target]);
-                            };
-                            requestAnimationFrame(animate);
+                            setSliderValue(target);
+                            onLevelChange(DEEP_CODE_REASONING_LEVELS[target]);
                         }}
-                        className={`deepcode-range w-full ${rgbStrength > 0 ? 'deepcode-range-rgb' : ''}`}
+                        className={`deepcode-range w-full ${isUltra ? 'deepcode-range-rgb' : ''}`}
                         style={{
-                            background: rgbStrength > 0
-                                ? `linear-gradient(90deg, ${rgbStops})`
+                            background: isUltra
+                                ? '#ef4444'
                                 : `linear-gradient(to right, #3b82f6 ${sliderPercent}%, var(--sonoma-border) ${sliderPercent}%)`,
                         }}
                         aria-label="DeepCode reasoning level slider"
@@ -243,10 +234,59 @@ function DeepCodeChip({
                                     color: l === level ? 'var(--sonoma-ink)' : 'var(--sonoma-faint)',
                                 }}
                             >
-                                {DEEP_CODE_REASONING_LEVEL_LABELS[l][0]}
+                                {(buildWorkspace && l === 'supercode' ? 'Ultra' : DEEP_CODE_REASONING_LEVEL_LABELS[l])[0]}
                             </span>
                         ))}
                     </div>
+                </div>
+            )}
+        </div>
+    );
+}
+
+function BuildPlanChip() {
+    const [open, setOpen] = useState(false);
+    const [mode, setMode] = useState<'Build' | 'Plan'>('Build');
+    const wrapRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        const onDoc = (event: MouseEvent) => {
+            if (wrapRef.current && !wrapRef.current.contains(event.target as Node)) setOpen(false);
+        };
+        document.addEventListener('mousedown', onDoc);
+        return () => document.removeEventListener('mousedown', onDoc);
+    }, []);
+
+    return (
+        <div ref={wrapRef} className="relative inline-flex items-center">
+            <button
+                type="button"
+                onClick={() => setOpen((value) => !value)}
+                aria-label={`Build mode: ${mode}`}
+                aria-expanded={open}
+                className="inline-flex items-center gap-1.5 rounded-full text-[13.5px] font-medium transition-colors"
+                style={{ border: '1px solid var(--sonoma-border)', background: 'var(--sonoma-surface)', color: 'var(--sonoma-ink-2)', padding: '7px 10px 7px 12px' }}
+            >
+                <span>{mode}</span>
+                <SonomaChevron />
+            </button>
+            {open && (
+                <div className="absolute bottom-[calc(100%+8px)] left-0 z-30 min-w-[120px] rounded-[12px] border p-1 shadow-lg" style={{ background: 'var(--sonoma-surface)', borderColor: 'var(--sonoma-border)' }}>
+                    {(['Build', 'Plan'] as const).map((option) => (
+                        <button
+                            key={option}
+                            type="button"
+                            className="block w-full rounded-lg px-3 py-2 text-left text-[13px]"
+                            style={{ background: mode === option ? 'var(--sonoma-accent-soft)' : 'transparent', color: 'var(--sonoma-ink)' }}
+                            onClick={() => {
+                                setMode(option);
+                                setOpen(false);
+                                window.dispatchEvent(new CustomEvent('tripplet:build-mode', { detail: { mode: option } }));
+                            }}
+                        >
+                            {option}
+                        </button>
+                    ))}
                 </div>
             )}
         </div>
@@ -451,6 +491,7 @@ export default function SonomaComposer({
     deepCodeLevel,
     onDeepCodeLevelChange,
     connectors,
+    buildWorkspace = false,
     attachments = true,
     placeholder,
     machines = [],
@@ -792,16 +833,16 @@ export default function SonomaComposer({
                         onClick={onToggleBrowse}
                         icon={<SonomaBrowse />}
                         label="Browse"
-                        compact={isMobile}
+                        compact={isMobile || buildWorkspace}
                     />
                 )}
-                {onToggleReason && (
+                {onToggleReason && !buildWorkspace && (
                     <ToolChip
                         active={!!reason}
                         onClick={onToggleReason}
                         icon={<SonomaReason />}
                         label="Reason"
-                        compact={isMobile}
+                        compact={isMobile || buildWorkspace}
                     />
                 )}
                 {onToggleCode && (
@@ -810,7 +851,7 @@ export default function SonomaComposer({
                         onClick={onToggleCode}
                         icon={<SonomaCode size={16} />}
                         label="Code"
-                        compact={isMobile}
+                        compact={isMobile || buildWorkspace}
                     />
                 )}
                 {onToggleDeepCode && (
@@ -819,10 +860,10 @@ export default function SonomaComposer({
                         onClick={onToggleDeepCode}
                         level={deepCodeLevel ?? 'high'}
                         onLevelChange={onDeepCodeLevelChange ?? (() => {})}
-                        compact={isMobile}
+                        compact={isMobile || buildWorkspace}
                     />
                 )}
-                {connectors && <ConnectorsMenu compact={isMobile} />}
+                {buildWorkspace ? <BuildPlanChip /> : connectors && <ConnectorsMenu compact={isMobile} />}
 
                 <div className="min-w-0 flex-1" />
 

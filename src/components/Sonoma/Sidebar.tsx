@@ -7,7 +7,7 @@ import { useChatActions, useChatConversations } from '@/context/ChatContext';
 import { type User, useAuth } from '@/context/AuthContext';
 import { cn } from '@/lib/utils';
 import { HugeiconsIcon } from '@hugeicons/react';
-import { AnvilIcon, Book01Icon, Logout02Icon, PaintBoardIcon, Settings05Icon } from '@hugeicons/core-free-icons';
+import { AnvilIcon, Logout02Icon, PaintBoardIcon, Settings05Icon } from '@hugeicons/core-free-icons';
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -23,10 +23,6 @@ import {
     SonomaCode,
 } from './icons';
 
-function TriplepediaIcon({ size = 18 }: { size?: number }) {
-    return <HugeiconsIcon icon={Book01Icon} size={size} strokeWidth={1.8} />;
-}
-
 function BuildIcon({ size = 18 }: { size?: number }) {
     return <HugeiconsIcon icon={AnvilIcon} size={size} strokeWidth={1.8} />;
 }
@@ -35,7 +31,6 @@ const PAGES = [
     { id: 'chat', label: 'Chat', icon: SonomaChat, href: '/chat' },
     { id: 'build', label: 'Build', icon: BuildIcon, href: '/build' },
     { id: 'code', label: 'Code', icon: SonomaCode, href: '/code' },
-    { id: 'triplepedia', label: 'Triplepedia', icon: TriplepediaIcon, href: '/triplepedia' },
 ];
 
 const FACE_FILES = [
@@ -88,23 +83,17 @@ function NavItem({ active, onClick, href, icon: Icon, label, collapsed }: NavIte
                     active ? 'text-[var(--sonoma-accent)]' : 'text-[color:currentColor]',
                 )}
             >
-                <Icon size={18} />
+                <Icon size={collapsed ? 16 : 18} />
             </span>
             {!collapsed && (
                 <span className="truncate whitespace-nowrap">{label}</span>
-            )}
-            {active && !collapsed && (
-                <span
-                    className="absolute right-2.5 top-1/2 -translate-y-1/2 h-[5px] w-[5px] rounded-full"
-                    style={{ background: 'var(--sonoma-accent)' }}
-                />
             )}
         </>
     );
 
     const classes = cn(
-        'relative flex w-full items-center gap-3 rounded-[10px] text-[14px] transition-colors',
-        collapsed ? 'justify-center py-2.5 px-0' : 'justify-start py-2 px-[11px]',
+        'relative flex min-w-0 flex-1 items-center rounded-[10px] text-[14px] transition-colors',
+        collapsed ? 'justify-center py-2.5 px-0' : 'flex-col justify-center gap-1 py-2 px-2 text-[13px]',
         active
             ? 'text-[var(--sonoma-ink)] font-medium'
             : 'text-[var(--sonoma-ink-2)] hover:text-[var(--sonoma-ink)] font-normal',
@@ -330,8 +319,23 @@ export default function SonomaSidebar({ collapsed, onCollapseToggle, mobile = fa
                 </button>
             </div>
 
+            {/* Pages */}
+            <nav className={cn('gap-0.5 py-1.5', collapsed ? 'flex flex-col px-1' : 'flex flex-row px-[10px]')}>
+                {PAGES.map((p) => (
+                    <NavItem
+                        key={p.id}
+                        href={p.href}
+                        icon={p.icon}
+                        label={p.label}
+                        active={isPageActive(p.href)}
+                        collapsed={collapsed}
+                        onClick={onNavigate}
+                    />
+                ))}
+            </nav>
+
             {/* New chat */}
-            <div className="px-[10px] pb-2">
+            <div className="px-[10px] pb-2 pt-1">
                 <button
                     onClick={handleNewChat}
                     title={collapsed ? 'New chat' : undefined}
@@ -358,21 +362,6 @@ export default function SonomaSidebar({ collapsed, onCollapseToggle, mobile = fa
                     {!collapsed && <span>New chat</span>}
                 </button>
             </div>
-
-            {/* Pages */}
-            <nav className="flex flex-col gap-0.5 px-[10px] py-1.5">
-                {PAGES.map((p) => (
-                    <NavItem
-                        key={p.id}
-                        href={p.href}
-                        icon={p.icon}
-                        label={p.label}
-                        active={isPageActive(p.href)}
-                        collapsed={collapsed}
-                        onClick={onNavigate}
-                    />
-                ))}
-            </nav>
 
             {/* History */}
             {!collapsed && (

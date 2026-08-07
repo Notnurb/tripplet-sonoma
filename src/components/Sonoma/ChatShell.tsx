@@ -98,6 +98,14 @@ interface SonomaChatShellProps {
     modelIds?: string[];
     conversationId?: string;
     transparent?: boolean;
+    composerAtBottom?: boolean;
+    onMessageSent?: () => void;
+    onResponseSettled?: () => void;
+    promptEventName?: string;
+    greeting?: { title: string; sub: string; placeholder: string };
+    beforeComposer?: React.ReactNode;
+    buildWorkspace?: boolean;
+    onCanvasContentChange?: (content: string) => void;
     // /dev panel only: bypasses the OUTAGE_ACTIVE composer lock and routes the
     // selected persona through a user-supplied Groq key + model id instead of
     // the normal server-side backend. See src/app/dev/page.tsx.
@@ -149,7 +157,7 @@ function toUI(m: Message): UIMessage {
     };
 }
 
-export default function SonomaChatShell({ page = 'chat', modelIds, conversationId, transparent = false, forceEnabled = false, devOverride }: SonomaChatShellProps = {}) {
+export default function SonomaChatShell({ page = 'chat', modelIds, conversationId, transparent = false, composerAtBottom = false, onMessageSent, onResponseSettled, promptEventName, greeting: greetingOverride, beforeComposer, buildWorkspace = false, onCanvasContentChange, forceEnabled = false, devOverride }: SonomaChatShellProps = {}) {
     const router = useRouter();
     const isMobile = useIsMobile();
     const { conversations, historyLoaded } = useChatConversations();
@@ -210,6 +218,11 @@ export default function SonomaChatShell({ page = 'chat', modelIds, conversationI
     // Manage panel. Refetched whenever Manage closes (pair/unpair changes it).
     const [pairedMachines, setPairedMachines] = useState<{ deviceId: string; machineName: string }[]>([]);
     const [mentionedMachine, setMentionedMachine] = useState<{ deviceId: string; machineName: string } | null>(null);
+    const greeting = greetingOverride ?? {
+        title: GREETINGS[page].title(),
+        sub: GREETINGS[page].sub,
+        placeholder: GREETINGS[page].placeholder,
+    };
 
     const refreshMachines = useCallback(() => {
         fetch('/api/connect/machines')
@@ -311,7 +324,7 @@ export default function SonomaChatShell({ page = 'chat', modelIds, conversationI
     }, [busy, messages, model, saveConversation, router]);
 
     const empty = messages.length === 0 && !busy;
-    const centered = empty;
+    const centered = empty && !composerAtBottom;
 
     // Auto-scroll as content streams in, but only when the user is already
     // pinned to the bottom — don't yank them back while they read history.
@@ -571,12 +584,14 @@ export default function SonomaChatShell({ page = 'chat', modelIds, conversationI
                                     : m,
                             ),
                         ),
-                    onContent: (delta) =>
-                        setMessages((prev) =>
-                            prev.map((m) =>
-                                m.id === assistantId ? { ...m, content: m.content + delta } : m,
-                            ),
-                        ),
+                    onContent: (delta) => {
+                        setMessages((prev) => {
+                            const next = prev.map((m) => m.id === assistantId ? { ...m, content: m.content + delta } : m);
+                            const assistant = next.find((m) => m.id === assistantId);
+                            if (assistant) onCanvasContentChange?.(assistant.content);
+                            return next;
+                        });
+                    },
                     onActivity: (ev) => {
                         if (ev.tool === 'run_on_machine') {
                             const deviceId = String(ev.args?.device_id ?? '');
@@ -639,20 +654,31 @@ export default function SonomaChatShell({ page = 'chat', modelIds, conversationI
             } finally {
                 abortRef.current = null;
                 setBusy(false);
+                onResponseSettled?.();
             }
         },
-        [browse, reason, codeMode, deepCode, deepCodeLevel, page, model, devOverride, sandboxEnabled, memoryEnabled, pastChatsEnabled, mentionedMachine, execBash, execMachine],
+        [browse, reason, codeMode, deepCode, deepCodeLevel, page, model, devOverride, sandboxEnabled, memoryEnabled, pastChatsEnabled, mentionedMachine, execBash, execMachine, onResponseSettled],
     );
 
     useEffect(() => {
         runAgentRef.current = runAgent;
     }, [runAgent]);
 
+    useEffect(() => {
+        if (page !== 'code' || promptEventName !== 'tripplet:build-prompt' || busy) return;
+        const lastAssistant = [...messages].reverse().find((message) => message.role === 'assistant' && message.content.trim());
+        if (!lastAssistant || !/[?？]\s*$/.test(lastAssistant.content.trim())) return;
+        window.dispatchEvent(new CustomEvent('tripplet:build-question', {
+            detail: { question: lastAssistant.content.trim().split('\n').pop() },
+        }));
+    }, [busy, messages, page, promptEventName]);
+
     const handleSend = useCallback(async () => {
         if (OUTAGE_ACTIVE && !forceEnabled) return;
         if (busy) return;
         const text = draft.trim();
         if (!text && uploaded.length === 0) return;
+        onMessageSent?.();
 
         // Ensure this chat is backed by a conversation so it lands in history.
         // On the bare /chat route (no id), mint one now and reflect it in the URL.
@@ -695,7 +721,17 @@ export default function SonomaChatShell({ page = 'chat', modelIds, conversationI
         // instead of requiring a fresh @mention every message.
 
         await runAgent(next.slice(0, -1), assistantMessage.id);
-    }, [busy, draft, uploaded, messages, model, runAgent, createConversation, page, conversationId, forceEnabled]);
+    }, [busy, draft, uploaded, messages, model, runAgent, createConversation, page, conversationId, forceEnabled, onMessageSent]);
+
+    useEffect(() => {
+        if (!promptEventName) return;
+        const handlePrompt = (event: Event) => {
+            const prompt = (event as CustomEvent<{ prompt?: string }>).detail?.prompt;
+            if (prompt) setDraft(prompt);
+        };
+        window.addEventListener(promptEventName, handlePrompt);
+        return () => window.removeEventListener(promptEventName, handlePrompt);
+    }, [promptEventName]);
 
     // Landing-page handoff: a message typed into the composer on `/` arrives
     // via sessionStorage. Prefill the draft (and any options) on mount, then
@@ -768,8 +804,8 @@ export default function SonomaChatShell({ page = 'chat', modelIds, conversationI
                     onScroll={onScroll}
                     className="sonoma-scroll absolute inset-0 overflow-y-auto"
                     style={{
-                        paddingTop: centered ? 0 : isMobile ? 56 : 24,
-                        paddingBottom: centered ? 0 : isMobile ? 188 : 220,
+                        paddingTop: empty ? 0 : isMobile ? 56 : 24,
+                        paddingBottom: empty ? 0 : isMobile ? 188 : 220,
                         WebkitOverflowScrolling: 'touch',
                         overscrollBehaviorY: 'contain',
                     }}
@@ -779,15 +815,15 @@ export default function SonomaChatShell({ page = 'chat', modelIds, conversationI
                         style={{
                             maxWidth: 760,
                             padding: isMobile ? '0 14px' : '0 24px',
-                            minHeight: centered ? '100%' : 'auto',
-                            justifyContent: centered ? 'center' : 'flex-start',
+                            minHeight: empty ? '100%' : 'auto',
+                            justifyContent: empty ? 'center' : 'flex-start',
                         }}
                     >
                         {empty && (
                             <>
                                 <PageGreeting
-                                    title={GREETINGS[page].title()}
-                                    sub={GREETINGS[page].sub}
+                                    title={greeting.title}
+                                    sub={greeting.sub}
                                     white={transparent}
                                 />
                                 {centered && (
@@ -829,10 +865,12 @@ export default function SonomaChatShell({ page = 'chat', modelIds, conversationI
                                             deepCodeLevel={deepCodeLevel}
                                             onDeepCodeLevelChange={setDeepCodeLevel}
                                             connectors
-                                            placeholder={GREETINGS[page].placeholder}
+                                            buildWorkspace={buildWorkspace}
+                                            placeholder={greeting.placeholder}
                                             machines={pairedMachines}
                                             mentionedMachine={mentionedMachine}
                                             onMentionMachine={setMentionedMachine}
+
                                         />
                                         </div>
                                     </div>
@@ -926,6 +964,7 @@ export default function SonomaChatShell({ page = 'chat', modelIds, conversationI
                                 </button>
                             )}
                             {OUTAGE_ACTIVE && !forceEnabled && <OutageNotice />}
+                            {beforeComposer}
                             <div
                                 aria-disabled={OUTAGE_ACTIVE && !forceEnabled}
                                 style={
@@ -962,9 +1001,12 @@ export default function SonomaChatShell({ page = 'chat', modelIds, conversationI
                                 deepCodeLevel={deepCodeLevel}
                                 onDeepCodeLevelChange={setDeepCodeLevel}
                                 connectors
+                                buildWorkspace={buildWorkspace}
+                                placeholder={greeting.placeholder}
                                 machines={pairedMachines}
                                 mentionedMachine={mentionedMachine}
                                 onMentionMachine={setMentionedMachine}
+
                             />
                             </div>
                             <div

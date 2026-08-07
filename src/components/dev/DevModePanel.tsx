@@ -330,6 +330,9 @@ function DevModePanelInner() {
                         </a>
                     ))}
                 </div>
+                <button type="button" className={`${buttonClass} mt-2`} onClick={() => { window.location.href = '/build?question-skill-test=1'; }}>
+                    Open question skill test in Build UI
+                </button>
             </div>
 
             <p className="mt-4 border-t border-border pt-2 text-[10px] leading-relaxed text-muted-foreground/70">

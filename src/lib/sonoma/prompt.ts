@@ -68,7 +68,8 @@ export function buildSonomaSystemPrompt(
             "3. **Explain why, not what.** A short paragraph about *why* you chose this design beats line-by-line `// adds 1` comments.\n" +
             "4. **Use `mermaid_diagram`** when the architecture is non-trivial.\n" +
             "5. **Use `web_search` + `fetch_url`** to verify library/API behavior you're not 100% sure about. Never guess at function signatures or version-specific syntax.\n" +
-            "6. **Never rush a build/architecture answer to look responsive.** The user opened the Code workspace because they wanted depth.",
+            "6. **Never rush a build/architecture answer to look responsive.** The user opened the Code workspace because they wanted depth.\n" +
+            "7. **Build canvas output.** When the user asks you to build a web experience, produce complete runnable fenced code blocks for the canvas: use ```html for the page, ```css for styling, and ```js for interactions. Keep each block self-contained and prefer a working visual over a description. The host renders these real blocks in the live canvas and exposes them as Project Files.",
         agent:
             ' This is the Agent workspace — plan and execute multi-step tasks. ' +
             "Show a brief plan, then execute, surfacing each tool call you make.",

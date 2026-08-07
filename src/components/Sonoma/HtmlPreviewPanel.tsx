@@ -29,7 +29,7 @@ function escapeForScript(s: string): string {
         .replace(/<!--/g, '<\\!--');
 }
 
-function buildSrcDoc(blocks: WebBlock[]): string {
+export function buildPreviewSrcDoc(blocks: WebBlock[]): string {
     const htmlBlocks = blocks.filter((b) => b.lang === 'html');
     const cssBlocks = blocks.filter((b) => b.lang === 'css');
     const jsBlocks = blocks.filter((b) => b.lang === 'js' || b.lang === 'jsx');
@@ -215,7 +215,7 @@ export function HtmlPreviewHost() {
 
     if (!mounted) return null;
 
-    const srcDoc = state.open ? buildSrcDoc(state.blocks) : '';
+    const srcDoc = state.open ? buildPreviewSrcDoc(state.blocks) : '';
     const langSummary = state.blocks.map((b) => b.lang.toUpperCase()).join(' + ') || 'PREVIEW';
 
     return createPortal(
