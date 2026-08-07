@@ -45,7 +45,6 @@
     "@hugeicons/core-free-icons": "^4.2.3",
     "@hugeicons/react": "^1.1.5",
     "@microsoft/clarity": "^1.0.2",
-    "@next/swc-darwin-arm64": "^16.3.0",
     "@number-flow/react": "^0.5.11",
     "@paper-design/shaders": "^0.0.72",
     "@prisma/client": "^5.10.2",
