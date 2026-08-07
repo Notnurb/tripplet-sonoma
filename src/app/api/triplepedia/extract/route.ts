@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth/session';
 import { searchLimiter, LIMITS, rateLimitResponse, getRateLimitToken } from '@/lib/security/rate-limit';
-import { assertFetchableUrl } from '@/lib/ai/websearch';
+import { fetchPinnedPage } from '@/lib/ai/websearch';
 
 function validateExternalUrl(raw: string): URL | null {
     let parsed: URL;
@@ -18,45 +18,28 @@ const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
 const MAX_REDIRECTS = 3;
 
 // The URL is user-supplied, so this fetch must never reach internal
-// infrastructure: every hop (including each redirect target) goes through the
-// resolver-level SSRF guard, and redirects are followed manually so a public
-// URL 302-ing to an internal host is caught before the connect.
-async function fetchBounded(input: string, init: RequestInit, maxBytes = MAX_RESPONSE_BYTES) {
+// infrastructure: the pinned fetch resolves + validates every address of every
+// hop (including each redirect target) and connects directly to the validated
+// IP, closing the DNS-rebinding TOCTOU of a plain fetch(). Redirects are
+// followed manually so a public URL 302-ing to an internal host is caught
+// before the connect.
+async function fetchBounded(input: string, headers: Record<string, string>, maxBytes = MAX_RESPONSE_BYTES) {
     let target = new URL(input);
-    let res: Response | null = null;
     for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
-        await assertFetchableUrl(target);
-        res = await fetch(target.toString(), { ...init, redirect: 'manual' });
+        const res = await fetchPinnedPage(target, { maxBytes, timeoutMs: 10_000, headers });
         if (res.status >= 300 && res.status < 400) {
-            const loc = res.headers.get('location');
+            const locRaw = res.headers.location;
+            const loc = Array.isArray(locRaw) ? locRaw[0] : locRaw;
             if (!loc || hop === MAX_REDIRECTS) throw new Error('Too many redirects.');
             target = new URL(loc, target);
             continue;
         }
-        break;
+        return {
+            res: new Response(res.body, { status: res.status, headers: res.headers as HeadersInit }),
+            text: res.body,
+        };
     }
-    if (!res) throw new Error('Fetch failed.');
-    const lenHeader = res.headers.get('content-length');
-    if (lenHeader && Number(lenHeader) > maxBytes) {
-        throw new Error('Response too large');
-    }
-    const reader = res.body?.getReader();
-    if (!reader) return { res, text: await res.text() };
-    const decoder = new TextDecoder('utf-8', { fatal: false });
-    let received = 0;
-    let text = '';
-    while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        received += value.byteLength;
-        if (received > maxBytes) {
-            try { await reader.cancel(); } catch { /* ignore */ }
-            throw new Error('Response too large');
-        }
-        text += decoder.decode(value, { stream: true });
-    }
-    text += decoder.decode();
-    return { res, text };
+    throw new Error('Too many redirects.');
 }
 
 interface ExtractedArticle {
@@ -327,12 +310,8 @@ async function extractWikipedia(title: string, _originalUrl: string): Promise<Ex
 
 async function extractGeneric(url: string): Promise<ExtractedArticle> {
     const { res, text: html } = await fetchBounded(url, {
-        headers: {
-            'User-Agent': 'Mozilla/5.0 (compatible; Triplepedia/1.0)',
-            'Accept': 'text/html',
-        },
-        signal: AbortSignal.timeout(10000),
-        redirect: 'follow',
+        'User-Agent': 'Mozilla/5.0 (compatible; Triplepedia/1.0)',
+        'Accept': 'text/html',
     });
 
     if (!res.ok) throw new Error(`Could not fetch the page (HTTP ${res.status}).`);

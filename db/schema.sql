@@ -11,6 +11,26 @@
 create extension if not exists pg_trgm;
 
 -- ── Triplepedia articles ───────────────────────────────────────────────────
+create table if not exists collaborator_invites (
+    id uuid primary key default gen_random_uuid(),
+    inviter_user_id text not null,
+    inviter_email text not null,
+    invitee_email text not null,
+    conversation_id text not null references "Conversation"(id) on delete cascade,
+    status text not null default 'pending' check (status in ('pending', 'accepted', 'declined')),
+    created_at timestamptz not null default now(),
+    seen_at timestamptz
+);
+create index if not exists collaborator_invites_recipient_idx on collaborator_invites (invitee_email, status, created_at desc);
+create table if not exists conversation_collaborators (
+    conversation_id text not null references "Conversation"(id) on delete cascade,
+    user_id text not null references "User"(id) on delete cascade,
+    role text not null default 'viewer' check (role in ('viewer', 'builder')),
+    created_at timestamptz not null default now(),
+    primary key (conversation_id, user_id)
+);
+
+-- ── Triplepedia articles ───────────────────────────────────────────────────
 create table if not exists triplepedia_articles (
     id uuid primary key default gen_random_uuid(),
     title text not null,

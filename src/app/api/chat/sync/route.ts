@@ -57,7 +57,7 @@ export async function POST(request: NextRequest) {
             const now = new Date();
             const firstUser = conv.messages.find((m) => m.role === 'user');
             const title = (conv.title || firstUser?.content.trim().slice(0, 40) || 'New Chat').slice(0, 200);
-            const model = conv.model || 'tura-3';
+            const model = conv.model || 'taipei4';
             const createdAt = toDate(conv.createdAt, now);
 
             await withTransaction(async (tx) => {

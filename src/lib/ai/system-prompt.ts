@@ -42,11 +42,11 @@ function loadPromptFile(filename: string, fallbackName: string): string {
 
 function getModelPrompt(modelId: string): string {
     switch (modelId) {
-        case 'tura-3':
+        case 'taipei4':
             return loadPromptFile('taipei.md', 'Taipei 3.1');
-        case 'majuli-3':
+        case 'majuli4':
             return loadPromptFile('majuli.md', 'Majuli 3.1');
-        case 'suzhou-3':
+        case 'suzhou4':
             return loadPromptFile('suzhou.md', 'Suzhou 3.1');
         default:
             return 'You are Tripplet, an AI assistant. Chat with the user.';
@@ -55,11 +55,11 @@ function getModelPrompt(modelId: string): string {
 
 function getExtendedPrompt(modelId: string): string {
     switch (modelId) {
-        case 'tura-3':
+        case 'taipei4':
             return loadPromptFile('taipeix.md', 'Taipei 3.1 Extended');
-        case 'majuli-3':
+        case 'majuli4':
             return loadPromptFile('majulix.md', 'Majuli 3.1 Extended');
-        case 'suzhou-3':
+        case 'suzhou4':
             return loadPromptFile('suzhoux.md', 'Suzhou 3.1 Extended');
         default:
             return 'You are Tripplet in extended thinking mode. Think deeply and show your reasoning.';
@@ -515,7 +515,7 @@ export function getSystemPrompt(options: SystemPromptOptions): string {
     // Taipei-only: inject an adaptive-depth hint based on the last user message.
     // Taipei has an unlimited thinking budget, so we use a soft prompt nudge to
     // tell the model how much reasoning a given turn actually deserves.
-    if (modelId === 'tura-3' && lastUserMessage) {
+    if (modelId === 'taipei4' && lastUserMessage) {
         const level = detectComplexity(lastUserMessage);
         prompt += `\n\n${COMPLEXITY_INSTRUCTIONS[level]}\n`;
     }

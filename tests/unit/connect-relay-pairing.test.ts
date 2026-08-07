@@ -139,7 +139,11 @@ describe('OpenSonoma relay pairing', () => {
         const body = (await res.json()) as Record<string, unknown>;
         expect(body.ok).toBe(true);
         expect(body.service).toBe('opensonoma-relay');
-        expect(body.mode).toBe('memory');
+        // The health payload must not leak operational state (auth mode,
+        // live fleet size) to unauthenticated callers.
+        expect(body.mode).toBeUndefined();
+        expect(body.devices).toBeUndefined();
+        expect(body.clients).toBeUndefined();
     }, 30_000);
 
     it('pairs a device to the caller identified by their Tripplet JWT', async () => {

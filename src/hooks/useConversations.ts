@@ -291,7 +291,7 @@ export function useConversations() {
     // any) is layered on by the caller in `useChat` — this stays pure
     // conversation domain.
     const createConversation = useCallback((modelId?: string, id?: string, initialMessages: Message[] = []) => {
-        const defaultModel = (isAuthLoaded && !isSignedIn) ? 'suzhou-3' : 'tura-3';
+        const defaultModel = (isAuthLoaded && !isSignedIn) ? 'suzhou4' : 'taipei4';
         const finalModel = modelId || defaultModel;
         const newId = id || uuidv4();
 
@@ -328,7 +328,7 @@ export function useConversations() {
                 const conv: Conversation = {
                     id,
                     title: derivedTitle,
-                    model: modelId || messages[messages.length - 1]?.model || 'tura-3',
+                    model: modelId || messages[messages.length - 1]?.model || 'taipei4',
                     createdAt: new Date(),
                     updatedAt: new Date(),
                     messages,

@@ -21,17 +21,17 @@ const BASE_MODELS: Model[] = [
         description: 'Flagship — top reasoning and range',
     },
     {
-        id: 'tura-3',
+        id: 'taipei4',
         name: 'Taipei 4',
         description: 'Advanced reasoning and analysis',
     },
     {
-        id: 'majuli-3',
+        id: 'majuli4',
         name: 'Majuli 4',
         description: 'Fast and concise responses',
     },
     {
-        id: 'suzhou-3',
+        id: 'suzhou4',
         name: 'Suzhou 4',
         description: 'Creative and detailed generation',
     },
@@ -99,7 +99,7 @@ export const CUSTOM_MODELS: Model[] = parseCustomModels().filter((m) => !builtIn
 
 export const MODELS: Model[] = [...BASE_MODELS, DEEP_CODE_FLAGSHIP, ...LEGACY_MODELS, ...CUSTOM_MODELS];
 
-const WORKSPACE_MODEL_IDS = ['astro-5', 'tura-3', 'majuli-3', 'suzhou-3'];
+const WORKSPACE_MODEL_IDS = ['astro-5', 'taipei4', 'majuli4', 'suzhou4'];
 
 const WORKSPACE_BASE: Model[] = [
     ...BASE_MODELS.filter((m) => WORKSPACE_MODEL_IDS.includes(m.id)),
@@ -113,7 +113,7 @@ export const AGENT_MODELS: Model[] = WORKSPACE_BASE;
 // DeepCode lineup: Astro 5 Code replaces the base flagship; the rest stay.
 export const DEEP_CODE_MODELS: Model[] = [
     DEEP_CODE_FLAGSHIP,
-    ...BASE_MODELS.filter((m) => ['tura-3', 'majuli-3', 'suzhou-3'].includes(m.id)),
+    ...BASE_MODELS.filter((m) => ['taipei4', 'majuli4', 'suzhou4'].includes(m.id)),
     ...CUSTOM_MODELS,
 ];
 

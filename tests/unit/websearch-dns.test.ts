@@ -8,16 +8,35 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 const lookup = vi.hoisted(() => vi.fn());
 vi.mock('node:dns/promises', () => ({ lookup: (...a: unknown[]) => lookup(...a) }));
 
+// fetchPageText now connects DIRECTLY to the validated IP via node:https (the
+// pinned-connect SSRF fix) — mock it so the success paths don't hit the wire.
+const httpsRequest = vi.hoisted(() => vi.fn());
+vi.mock('node:https', () => ({ request: (...a: unknown[]) => httpsRequest(...a) }));
+
+import { EventEmitter } from 'node:events';
+import { Readable } from 'node:stream';
 import { fetchPageText } from '@/lib/ai/websearch';
 
-const fetchMock = vi.fn();
+function fakeResponse(status: number, body: string, headers: Record<string, string> = {}) {
+    const stream = Readable.from([body]);
+    (stream as unknown as { statusCode: number }).statusCode = status;
+    (stream as unknown as { headers: Record<string, string> }).headers = headers;
+    return stream;
+}
+
+function fakeReq() {
+    const req = new EventEmitter();
+    (req as unknown as { end: () => void }).end = () => {};
+    (req as unknown as { destroy: (err?: Error) => void }).destroy = (err?: Error) => {
+        if (err) req.emit('error', err);
+    };
+    return req;
+}
 
 beforeEach(() => {
     lookup.mockReset();
-    fetchMock.mockReset();
-    vi.stubGlobal('fetch', fetchMock);
+    httpsRequest.mockReset();
 });
-afterEach(() => vi.unstubAllGlobals());
 
 describe('fetchPageText DNS-rebinding guard', () => {
     const blockedAnswers: Array<[string, { address: string; family: number }]> = [
@@ -32,7 +51,7 @@ describe('fetchPageText DNS-rebinding guard', () => {
         it(`blocks a hostname whose ${label}`, async () => {
             lookup.mockResolvedValue([answer]);
             await expect(fetchPageText('https://rebind.example.test/x')).rejects.toThrow('This host cannot be fetched.');
-            expect(fetchMock).not.toHaveBeenCalled(); // blocked BEFORE any connect
+            expect(httpsRequest).not.toHaveBeenCalled(); // blocked BEFORE any connect
         });
     }
 
@@ -47,7 +66,7 @@ describe('fetchPageText DNS-rebinding guard', () => {
     it('blocks on resolver failure instead of proceeding unvalidated', async () => {
         lookup.mockRejectedValue(new Error('ENOTFOUND'));
         await expect(fetchPageText('https://nxdomain.example.test/')).rejects.toThrow('This host cannot be fetched.');
-        expect(fetchMock).not.toHaveBeenCalled();
+        expect(httpsRequest).not.toHaveBeenCalled();
     });
 
     it('lets a publicly-resolving hostname through to the fetch', async () => {
@@ -55,24 +74,29 @@ describe('fetchPageText DNS-rebinding guard', () => {
             { address: '93.184.216.34', family: 4 },
             { address: '2606:2800:220:1::1', family: 6 }, // public AAAA is fine
         ]);
-        fetchMock.mockResolvedValue(new Response('<html><body><p>public page</p></body></html>', {
-            status: 200,
-            headers: { 'Content-Type': 'text/html' },
-        }));
+        httpsRequest.mockImplementation((_options: unknown, handler: (res: unknown) => void) => {
+            handler(fakeResponse(200, '<html><body><p>public page</p></body></html>'));
+            return fakeReq();
+        });
         const text = await fetchPageText('https://public.example.test/');
         expect(text).toContain('public page');
         expect(lookup).toHaveBeenCalledWith('public.example.test', { all: true, verbatim: true });
+        // The connect must be pinned to the validated public IP, not the hostname.
+        const opts = httpsRequest.mock.calls[0][0] as { host: string; servername: string; headers: Record<string, string> };
+        expect(opts.host).toBe('93.184.216.34');
+        expect(opts.servername).toBe('public.example.test');
+        expect(opts.headers.Host).toBe('public.example.test');
     });
 
     it('re-validates DNS on every redirect hop', async () => {
         // Hop 1 resolves public and 302s to a host that resolves private.
         lookup.mockResolvedValueOnce([{ address: '93.184.216.34', family: 4 }]);
-        fetchMock.mockResolvedValueOnce(new Response(null, {
-            status: 302,
-            headers: { location: 'https://internal.example.test/admin' },
-        }));
+        httpsRequest.mockImplementationOnce((_options: unknown, handler: (res: unknown) => void) => {
+            handler(fakeResponse(302, '', { location: 'https://internal.example.test/admin' }));
+            return fakeReq();
+        });
         lookup.mockResolvedValueOnce([{ address: '192.168.0.10', family: 4 }]);
         await expect(fetchPageText('https://public.example.test/start')).rejects.toThrow('This host cannot be fetched.');
-        expect(fetchMock).toHaveBeenCalledTimes(1); // second hop blocked pre-connect
+        expect(httpsRequest).toHaveBeenCalledTimes(1); // second hop blocked pre-connect
     });
 });

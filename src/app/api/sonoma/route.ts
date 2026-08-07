@@ -34,6 +34,18 @@ export const runtime = 'nodejs';
 // Deep Code pipelines run several sequential model stages — give them room.
 export const maxDuration = 300;
 
+async function runSubagent(task: string, target: BackendTarget, page: SonomaPage, reason: boolean): Promise<string> {
+    let output = '';
+    const subHistory = [
+        { role: 'system', content: 'You are a focused subagent. Complete only the assigned subtask, be concise, and return a useful report to the parent agent.' },
+        { role: 'user', content: task },
+    ];
+    for await (const event of streamOnce(subHistory, reason, page, target, [])) {
+        if (event.type === 'content') output += event.delta;
+    }
+    return output || 'The subagent returned no report.';
+}
+
 interface RouteBody {
     messages: { role: 'user' | 'assistant' | 'system'; content: string }[];
     reason?: boolean;
@@ -70,7 +82,7 @@ interface RouteBody {
     // it is already reading.
     conversationId?: string;
     page?: SonomaPage;
-    // Persona id (e.g. 'astro-5', 'tura-3'). Selects the upstream backend.
+    // Persona id (e.g. 'astro-5', 'taipei4'). Selects the upstream backend.
     model?: string;
     // /dev panel only (src/app/dev/page.tsx): routes this request through a
     // user-supplied key + model id instead of the normal server-side backend.
@@ -156,7 +168,7 @@ export async function POST(req: NextRequest) {
     if (!messages.some((m) => m.role !== 'system')) {
         return new Response('messages required', { status: 400 });
     }
-    if (page !== 'chat' && page !== 'code' && page !== 'agent') {
+    if (page !== 'chat' && page !== 'code' && page !== 'work' && page !== 'agent') {
         return new Response('Invalid page', { status: 400 });
     }
 
@@ -193,9 +205,22 @@ export async function POST(req: NextRequest) {
         target = resolveBackend(model);
     }
     if (!target.apiKey) {
+        const keyEnv = target.keyEnvName || envVarFor(target.provider);
         return new Response(
-            `Inference backend not configured: set ${target.keyEnvName || envVarFor(target.provider)} to use ${model || 'this model'}.`,
-            { status: 503 },
+            JSON.stringify({
+                error: `Inference backend not configured: set ${keyEnv} to use ${model || 'this model'}.`,
+                // Machine-readable for clients (Tripplet Work, /dev) that want to
+                // show a friendly banner instead of the raw message. `provider` and
+                // `keyEnv` name what the server actually needs so the message can be
+                // specific without re-parsing the error string.
+                code: 'backend_not_configured',
+                provider: target.provider,
+                keyEnv,
+            }),
+            {
+                status: 503,
+                headers: { 'content-type': 'application/json; charset=utf-8' },
+            },
         );
     }
 
@@ -338,7 +363,9 @@ export async function POST(req: NextRequest) {
                         // Connector calls route through Composio (per-user
                         // scoping lives server-side there); everything else is
                         // a built-in tool.
-                        const out = composio?.canRun(tc.name)
+                        const out = tc.name === 'spawn_subagent'
+                            ? JSON.stringify({ report: await runSubagent(String(tc.args.task ?? ''), target, page, reason) })
+                            : composio?.canRun(tc.name)
                             ? await composio.run(tc)
                             : await runTool(tc, { userId, conversationId });
                         let parsed: unknown = out;

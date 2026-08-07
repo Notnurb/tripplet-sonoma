@@ -207,7 +207,7 @@ export function useChat() {
             if (modeLabels) {
                 startShimmer(modeLabels);
             } else {
-                const isTaipei = modelId === 'tura-3';
+                const isTaipei = modelId === 'taipei4';
                 if (isTaipei || extendedThinking) {
                     startShimmer(extendedThinking ? EXTENDED_LABELS : TURA_LABELS);
                 } else {

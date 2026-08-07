@@ -1,4 +1,4 @@
-import { resolveBackend } from '@/lib/ai/llm';
+import { resolveBackend, envVarFor } from '@/lib/ai/llm';
 
 export interface ChatToolDefinition {
     type: 'function';
@@ -81,10 +81,14 @@ export async function* streamChatEvents({
     const target = resolveBackend(modelId);
     const key = apiKey || target.apiKey;
     if (!key) {
-        const envVar = target.provider === 'opencode-zen' ? 'OPENCODE_ZEN_API_KEY' : 'GROQ_API_KEY';
-        throw new Error(
+        const envVar = envVarFor(target.provider);
+        const err = new Error(
             `${envVar} is not configured. Set it in your environment to enable ${target.provider} inference.`
         );
+        // Machine-readable so /api/chat can surface a structured `backend_not_configured`
+        // SSE event instead of a bare string (Tripplet Work relies on this code).
+        (err as Error & { code?: string }).code = 'backend_not_configured';
+        throw err;
     }
 
     const body: Record<string, unknown> = {

@@ -21,7 +21,7 @@ export const DEEP_CODE_REASONING_LEVEL_LABELS: Record<DeepCodeReasoningLevel, st
     high: 'High',
     xhigh: 'XHigh',
     max: 'Max',
-    supercode: 'Supercode',
+    supercode: 'Agentic',
 };
 
 export function isReasoningLevel(v: unknown): v is DeepCodeReasoningLevel {

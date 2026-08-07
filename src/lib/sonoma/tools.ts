@@ -14,6 +14,18 @@ export const SONOMA_TOOLS = [
     {
         type: 'function',
         function: {
+            name: 'spawn_subagent',
+            description: 'Delegate a focused subtask to a parallel subagent and use its report in the main task. Use this for independent research, coding analysis, or verification.',
+            parameters: {
+                type: 'object',
+                properties: { task: { type: 'string', description: 'The focused subtask for the subagent.' } },
+                required: ['task'],
+            },
+        },
+    },
+    {
+        type: 'function',
+        function: {
             name: 'web_search',
             description:
                 'Search the public web for up-to-date information. Returns a list of {title,url,snippet} results.',

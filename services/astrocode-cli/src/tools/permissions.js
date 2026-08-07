@@ -424,11 +424,19 @@ function destructiveSegment(seg, home) {
 
 const GLOB_CHARS = /[*?[\]{}]/;
 
+// Windows paths are case-insensitive; comparing raw strings there would let a
+// rule like `Write(Src/Foo.js)` silently fail to protect (or approve) a path
+// typed with different casing. On POSIX paths stay case-sensitive.
+const IS_WIN = process.platform === 'win32';
+const pathEq = (a, b) => (IS_WIN ? a.toLowerCase() === b.toLowerCase() : a === b);
+const pathStarts = (a, b) =>
+  IS_WIN ? a.toLowerCase().startsWith(b.toLowerCase()) : a.startsWith(b);
+
 /**
  * Minimal pattern -> RegExp. `**` crosses separators, `*` does not (unless
  * `anySlash`, which is what command patterns want).
  */
-function ruleRegExp(pattern, anySlash = false) {
+function ruleRegExp(pattern, anySlash = false, ci = false) {
   const star = anySlash ? '.*' : '[^/]*';
   let re = '';
   let depth = 0;
@@ -457,7 +465,7 @@ function ruleRegExp(pattern, anySlash = false) {
     re += escapeRe(c);
   }
   while (depth-- > 0) re += ')';
-  return new RegExp(`^${re}$`);
+  return new RegExp(`^${re}$`, ci ? 'i' : '');
 }
 
 const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -503,11 +511,11 @@ function matchPathPattern(pattern, target, cwd, home) {
   const abs = path.resolve(cwd, expandHome(target, home));
   const rel = toPosix(path.relative(cwd, abs));
   if (GLOB_CHARS.test(p)) {
-    const re = ruleRegExp(toPosix(p));
+    const re = ruleRegExp(toPosix(p), false, IS_WIN);
     return re.test(rel) || re.test(toPosix(abs));
   }
   const ruleAbs = path.resolve(cwd, p);
-  return abs === ruleAbs || abs.startsWith(ruleAbs + path.sep);
+  return pathEq(abs, ruleAbs) || pathStarts(abs, ruleAbs + path.sep);
 }
 
 const toPosix = (p) => p.split(path.sep).join('/');
@@ -651,7 +659,7 @@ export class Permissions {
 
   #inside(target) {
     const abs = path.resolve(this.cwd, expandHome(target, this.home));
-    if (abs === this.cwd) return true;
+    if (pathEq(abs, this.cwd)) return true;
     const rel = path.relative(this.cwd, abs);
     return rel !== '' && !rel.startsWith('..') && !path.isAbsolute(rel);
   }

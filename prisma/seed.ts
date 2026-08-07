@@ -26,7 +26,7 @@ async function main() {
         data: {
             userId: user.id,
             title: 'Welcome to Hefai',
-            model: 'tura-3',
+            model: 'taipei4',
             messages: {
                 create: [
                     {

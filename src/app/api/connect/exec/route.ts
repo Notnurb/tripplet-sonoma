@@ -9,6 +9,7 @@ import { NextRequest } from 'next/server';
 import { cookies } from 'next/headers';
 import { auth } from '@/lib/auth/session';
 import { relayExec } from '@/lib/connect/relay';
+import { connectExecLimiter, LIMITS, getRateLimitToken, rateLimitResponse } from '@/lib/security/rate-limit';
 
 export const runtime = 'nodejs';
 export const maxDuration = 120;
@@ -17,6 +18,12 @@ export async function POST(req: NextRequest) {
     const { userId } = await auth();
     if (!userId) {
         return Response.json({ error: 'Sign in to run commands on a paired device.' }, { status: 401 });
+    }
+
+    try {
+        await connectExecLimiter.check(LIMITS.connectExec, getRateLimitToken(req, userId));
+    } catch {
+        return rateLimitResponse();
     }
 
     let body: { deviceId?: string; command?: string; password?: string };

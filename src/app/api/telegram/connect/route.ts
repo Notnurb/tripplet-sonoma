@@ -28,7 +28,7 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 });
     }
     const token = (body.token ?? '').trim();
-    const model = body.model ?? 'majuli-3';
+    const model = body.model ?? 'majuli4';
 
     if (!token || !/^\d+:[A-Za-z0-9_-]+$/.test(token)) {
         return NextResponse.json({ error: 'That does not look like a valid Telegram bot token' }, { status: 400 });

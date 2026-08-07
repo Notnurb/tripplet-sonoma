@@ -176,7 +176,7 @@ export function sendInput(data: string): void {
 let queue: Promise<unknown> = Promise.resolve();
 const COMMAND_TIMEOUT_MS = 20_000;
 
-export function runBash(command: string): Promise<string> {
+export function runBash(command: string, onProgress?: (partial: string) => void): Promise<string> {
     const exec = () =>
         new Promise<string>((resolve) => {
             const START = '__TL_S_' + Math.random().toString(36).slice(2, 9) + '__';
@@ -207,7 +207,19 @@ export function runBash(command: string): Promise<string> {
                     return;
                 }
                 const e = acc.indexOf('\n' + END);
-                if (e >= 0) finish(acc.slice(0, e));
+                if (e >= 0) {
+                    finish(acc.slice(0, e));
+                    return;
+                }
+                if (onProgress) {
+                    // Live terminal feed: trim a trailing partial line if it
+                    // could be the start of the END marker, so it never
+                    // flickers into view before we know it's not real output.
+                    let show = acc;
+                    const nl = show.lastIndexOf('\n');
+                    if (nl >= 0 && END.startsWith(show.slice(nl + 1))) show = show.slice(0, nl);
+                    onProgress(show);
+                }
             };
 
             const timer = setTimeout(() => finish(acc || '(command timed out)'), COMMAND_TIMEOUT_MS);

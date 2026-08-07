@@ -1,0 +1,43 @@
+name: Astrocode (Windows)
+
+# Astrocode's cross-platform claim lives or dies on Windows, and there is no
+# macOS-side way to prove it — so this job runs the real suite on a Windows
+# runner every push/PR. It is a separate workflow from CI on purpose: the CLI
+# is its own vendored package with zero install-time deps, and keeping it here
+# means a Windows regression flags itself without gating the web app.
+#
+# The suite is pure Node (node --test) and must stay green here. Shell-command
+# tests run through cmd.exe / PowerShell paths stubbed in the unit tests.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  astrocode:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install
+        working-directory: services/astrocode-cli
+        run: npm ci
+      - name: Lint (syntax check on entry point)
+        working-directory: services/astrocode-cli
+        run: npm run lint
+      - name: Unit tests (node --test)
+        working-directory: services/astrocode-cli
+        run: npm test
+      - name: PowerShell installer syntax check
+        shell: pwsh
+        run: |
+          $tokens = $null; $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $env:GITHUB_WORKSPACE 'public/installcli.ps1'), [ref]$tokens, [ref]$errors) | Out-Null
+          if ($errors.Count -gt 0) { $errors | ForEach-Object { Write-Error $_.Message }; exit 1 }
+          Write-Host "installcli.ps1: PowerShell syntax OK"
+      - name: Installer dry-run (shim generation, no PATH mutation)
+        working-directory: services/astrocode-cli
+        run: node scripts/install.js --dry-run --prefix "%TEMP%\astrocode-test"

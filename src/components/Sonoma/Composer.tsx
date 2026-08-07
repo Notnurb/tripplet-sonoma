@@ -128,7 +128,7 @@ function ToolChip({
 }
 
 // DeepCode's tool chip plus a chevron that opens a popover with a slider for
-// picking the pipeline's reasoning level (Low ... Supercode).
+// picking the pipeline's reasoning level (Low ... Agentic).
 function DeepCodeChip({
     active,
     onClick,
@@ -145,6 +145,19 @@ function DeepCodeChip({
     const [open, setOpen] = useState(false);
     const wrapRef = useRef<HTMLDivElement>(null);
     const idx = Math.max(0, DEEP_CODE_REASONING_LEVELS.indexOf(level));
+    const [sliderValue, setSliderValue] = useState(idx);
+    const sliderMax = DEEP_CODE_REASONING_LEVELS.length - 1;
+    const agenticStart = DEEP_CODE_REASONING_LEVELS.indexOf('max');
+    const sliderPercent = (sliderValue / sliderMax) * 100;
+    const rgbStrength = Math.min(1, Math.max(0, (sliderValue - agenticStart) / (sliderMax - agenticStart)));
+    const rgbStops = [
+        ['#ff0000', 0],
+        ['#00ff00', 33],
+        ['#0000ff', 66],
+        ['#ff0000', 100],
+    ].map(([color, stop]) => `color-mix(in srgb, ${color} ${rgbStrength * 100}%, #3b82f6) ${stop}%`).join(', ');
+
+    useEffect(() => setSliderValue(idx), [idx]);
 
     useEffect(() => {
         function onDoc(e: MouseEvent) {
@@ -173,7 +186,7 @@ function DeepCodeChip({
             </button>
             {open && (
                 <div
-                    className="sm-pop absolute z-30"
+                        className="sm-pop absolute z-30"
                     style={{
                         bottom: 'calc(100% + 8px)',
                         left: 0,
@@ -197,10 +210,28 @@ function DeepCodeChip({
                         type="range"
                         min={0}
                         max={DEEP_CODE_REASONING_LEVELS.length - 1}
-                        step={1}
-                        value={idx}
-                        onChange={(e) => onLevelChange(DEEP_CODE_REASONING_LEVELS[Number(e.target.value)])}
-                        className="w-full accent-[var(--sonoma-accent)]"
+                        value={sliderValue}
+                        step={0.01}
+                        onChange={(e) => setSliderValue(Number(e.target.value))}
+                        onPointerUp={() => {
+                            const target = Math.round(sliderValue);
+                            const start = sliderValue;
+                            const began = performance.now();
+                            const animate = (now: number) => {
+                                const progress = Math.min(1, (now - began) / 180);
+                                const eased = 1 - Math.pow(1 - progress, 3);
+                                setSliderValue(start + (target - start) * eased);
+                                if (progress < 1) requestAnimationFrame(animate);
+                                else onLevelChange(DEEP_CODE_REASONING_LEVELS[target]);
+                            };
+                            requestAnimationFrame(animate);
+                        }}
+                        className={`deepcode-range w-full ${rgbStrength > 0 ? 'deepcode-range-rgb' : ''}`}
+                        style={{
+                            background: rgbStrength > 0
+                                ? `linear-gradient(90deg, ${rgbStops})`
+                                : `linear-gradient(to right, #3b82f6 ${sliderPercent}%, var(--sonoma-border) ${sliderPercent}%)`,
+                        }}
                         aria-label="DeepCode reasoning level slider"
                     />
                     <div className="mt-1.5 flex justify-between px-0.5">
@@ -603,7 +634,7 @@ export default function SonomaComposer({
 
     return (
         <div
-            className="w-full"
+            className={`w-full ${deepCode && deepCodeLevel === 'supercode' ? 'supercode-composer' : ''}`}
             style={{
                 background: 'var(--sonoma-surface)',
                 border: '1px solid var(--sonoma-border)',

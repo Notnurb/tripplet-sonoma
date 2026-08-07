@@ -155,7 +155,7 @@ export default function UsagePage() {
         // Model usage counts
         const modelCounts: Record<string, number> = {};
         for (const c of conversations) {
-            const model = (c as any).model ?? 'suzhou-3';
+            const model = (c as any).model ?? 'suzhou4';
             modelCounts[model] = (modelCounts[model] ?? 0) + 1;
         }
 
@@ -210,7 +210,7 @@ export default function UsagePage() {
 
         // Favorite model
         const favoriteModel = Object.entries(modelCounts)
-            .sort((a, b) => b[1] - a[1])[0]?.[0] ?? 'suzhou-3';
+            .sort((a, b) => b[1] - a[1])[0]?.[0] ?? 'suzhou4';
 
         // Daily chart data
         const dailyData = Object.entries(last30)

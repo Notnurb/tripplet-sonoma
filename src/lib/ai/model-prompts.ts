@@ -171,9 +171,9 @@ You never discuss your internal architecture, stages, or the systems that power 
 export const MODEL_SYSTEM_PROMPTS: Record<string, string> = {
     'astro-5': ASTRO,
     'astro-5-code': ASTRO_CODE,
-    'tura-3': TAIPEI,
-    'majuli-3': MAJULI,
-    'suzhou-3': SUZHOU,
+    'taipei4': TAIPEI,
+    'majuli4': MAJULI,
+    'suzhou4': SUZHOU,
 };
 
 // Returns the identity/persona prompt for a persona id, defaulting to the

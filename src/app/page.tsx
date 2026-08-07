@@ -36,19 +36,19 @@ const MODELS = [
         desc: 'Our most capable model — deep reasoning, agentic tool use, and full code pipelines through Astro 5 Code.',
     },
     {
-        id: 'tura-3',
+        id: 'taipei4',
         name: 'Taipei 4',
         role: 'Reasoning',
         desc: 'Structured thinking for research, analysis, and multi-step problems that deserve more than a first guess.',
     },
     {
-        id: 'majuli-3',
+        id: 'majuli4',
         name: 'Majuli 4',
         role: 'Everyday',
         desc: 'The balanced daily driver — fast enough to keep up, thoughtful enough to be worth asking.',
     },
     {
-        id: 'suzhou-3',
+        id: 'suzhou4',
         name: 'Suzhou 4',
         role: 'Instant',
         desc: 'Light and immediate. Free for guests, no account required — start a conversation in one click.',

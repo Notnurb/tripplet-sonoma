@@ -1043,10 +1043,16 @@ if (TRIPPLET_JWT_SECRET) {
 } else if (db.mode === 'supabase') {
   log('Client auth: Supabase JWT verification.');
 } else {
-  log(
-    'WARNING: no TRIPPLET_JWT_SECRET and no Supabase — clients are DEV-TRUSTED ' +
-      '(JWTs are NOT verified). Set TRIPPLET_JWT_SECRET for production.',
-  );
+  const devTrust =
+    'no TRIPPLET_JWT_SECRET and no Supabase — clients are DEV-TRUSTED ' +
+    '(JWTs are NOT verified; any caller can claim any account_id).';
+  if (process.env.NODE_ENV === 'production') {
+    // Dev-trust in production means account spoofing (device theft/unpair).
+    // Refuse to boot rather than silently serving an unauthenticated relay.
+    log(`FATAL: ${devTrust} Set TRIPPLET_JWT_SECRET (or Supabase) before deploying.`);
+    process.exit(1);
+  }
+  log(`WARNING: ${devTrust} Set TRIPPLET_JWT_SECRET for production.`);
 }
 
 function requestHandler(req, res) {
@@ -1056,11 +1062,10 @@ function requestHandler(req, res) {
       JSON.stringify({
         ok: true,
         service: 'opensonoma-relay',
-        mode: db.mode,
         secure: TLS_ENABLED,
-        devices: deviceSockets.size,
-        clients: clientSockets.size,
-        public_url: RELAY_PUBLIC_URL,
+        // No device/client counts or auth mode here — those are operational
+        // intel (live fleet size, whether client auth is enforced) with no
+        // need to be public.
       }),
     );
     return;

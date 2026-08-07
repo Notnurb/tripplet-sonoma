@@ -9,7 +9,7 @@
 import { getModelSystemPrompt } from '@/lib/ai/model-prompts';
 import { UNTRUSTED_EXTERNAL_CONTENT_GUARDRAIL } from '@/lib/security/prompt-guardrails';
 
-export type SonomaPage = 'chat' | 'code' | 'agent';
+export type SonomaPage = 'chat' | 'code' | 'work' | 'agent';
 
 export function buildSonomaSystemPrompt(
     page: SonomaPage,
@@ -72,6 +72,9 @@ export function buildSonomaSystemPrompt(
         agent:
             ' This is the Agent workspace — plan and execute multi-step tasks. ' +
             "Show a brief plan, then execute, surfacing each tool call you make.",
+        work:
+            ' This is the Work workspace, an agentic task surface on the user\'s machine. ' +
+            "The user describes a job to be done — plan it, then get it done, surfacing each tool call you make and confirming before anything destructive.",
     }[page];
     const browseNote = browse
         ? ' The user has Browse enabled — you should lean heavily on web_search/fetch_url for any non-trivial question.'

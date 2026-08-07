@@ -318,6 +318,10 @@ export const oauthRegisterLimiter = rateLimit({ name: 'oauth-register', interval
 export const x402BuyLimiter = rateLimit({ name: 'x402-buy', interval: 60 * 60 * 1000, uniqueTokenPerInterval: 10000 });
 export const x402ChatLimiter = rateLimit({ name: 'x402-chat', interval: 60 * 60 * 1000, uniqueTokenPerInterval: 10000 });
 export const syncLimiter = rateLimit({ name: 'sync', interval: 60 * 60 * 1000, uniqueTokenPerInterval: 10000 });
+// Server-side command execution — one spawn per request, so these are capped
+// tighter than most surfaces even though they're authenticated.
+export const cloudCommandLimiter = rateLimit({ name: 'cloud-command', interval: 60 * 60 * 1000, uniqueTokenPerInterval: 10000 });
+export const connectExecLimiter = rateLimit({ name: 'connect-exec', interval: 60 * 60 * 1000, uniqueTokenPerInterval: 10000 });
 
 // Limits per hour per token (user ID or IP).
 // Set conservatively — these are real guard rails, not rubber stamps.
@@ -341,6 +345,8 @@ export const LIMITS = {
     usage: 240,         // 240 usage-summary reads/hr — a 60s poll is 60/hr, leave room for focus refetches
     sync: 360,          // 360 conversation syncs/hr — debounced client pushes, one per pause in typing
     memory: 600,        // 600 memory reads/writes/hr — the panel lists on open and the AI saves facts mid-chat
+    cloudCommand: 120,  // 120 cloud-env command executions/hr per user — each one spawns a server process
+    connectExec: 60,    // 60 paired-device shell execs/hr per user — each one drives a command on a real machine
 };
 
 /**

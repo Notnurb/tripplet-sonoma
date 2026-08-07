@@ -32,7 +32,7 @@ export async function GET(req: NextRequest) {
                     ) AS messages
                  FROM "Conversation" c
                  LEFT JOIN "Message" m ON m."conversationId" = c.id
-                 WHERE c."userId" = $1 AND c."deletedAt" IS NULL
+                 WHERE (c."userId" = $1 OR EXISTS (SELECT 1 FROM conversation_collaborators cc WHERE cc.conversation_id = c.id AND cc.user_id = $1)) AND c."deletedAt" IS NULL
                  GROUP BY c.id
                  ORDER BY c."updatedAt" DESC`,
                 [userId],

@@ -9,6 +9,12 @@ vi.mock('@/lib/auth/session', () => ({
     auth: vi.fn(async () => ({ userId: null })),
 }));
 
+// The dev-override branch is gated on OUTAGE_ACTIVE; the build ships with it
+// false, so force it on for the one test that exercises that path.
+vi.mock('@/lib/outage', () => ({
+    OUTAGE_ACTIVE: true,
+}));
+
 import { POST } from '@/app/api/sonoma/route';
 
 let ipCounter = 0;
@@ -73,8 +79,15 @@ describe('POST /api/sonoma validation', () => {
         expect(await res.text()).toBe('Invalid page');
     });
 
+    it('accepts the Work page (passes validation, then fails on backend key)', async () => {
+        vi.stubEnv('GROQ_API_KEY', '');
+        vi.stubEnv('LLM_API_KEY', '');
+        const res = await POST(post({ messages: [userMsg], page: 'work' }));
+        expect(res.status).toBe(503);
+    });
+
     it('rejects a dev override without the unlock cookie', async () => {
-        // OUTAGE_ACTIVE is true in the current build, so the override path is
+        // OUTAGE_ACTIVE is mocked on for this suite, so the override path is
         // reachable — but without a valid dev_unlock cookie it must 403.
         const res = await POST(post({
             messages: [userMsg],
@@ -84,11 +97,21 @@ describe('POST /api/sonoma validation', () => {
         expect(await res.text()).toBe('Dev panel not unlocked');
     });
 
-    it('returns 503 (not a crash) when no backend key is configured', async () => {
+    it('returns a machine-readable 503 when no backend key is configured', async () => {
         vi.stubEnv('GROQ_API_KEY', '');
         vi.stubEnv('LLM_API_KEY', '');
         const res = await POST(post({ messages: [userMsg] }));
         expect(res.status).toBe(503);
-        expect(await res.text()).toContain('Inference backend not configured');
+        expect(res.headers.get('content-type')).toContain('application/json');
+        const body = (await res.json()) as {
+            error: string;
+            code: string;
+            provider: string;
+            keyEnv: string;
+        };
+        expect(body.error).toContain('Inference backend not configured');
+        expect(body.code).toBe('backend_not_configured');
+        expect(body.provider).toBe('groq');
+        expect(body.keyEnv).toBe('GROQ_API_KEY');
     });
 });

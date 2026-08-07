@@ -52,7 +52,7 @@ describe('POST /api/chat — conversation IDOR guard', () => {
 
         const res = await POST(post({
             messages: [{ role: 'user', content: 'attacker-controlled message' }],
-            model: 'tura-3',
+            model: 'taipei4',
             conversationId: '11111111-1111-4111-8111-111111111111',
         }));
 
@@ -77,7 +77,7 @@ describe('POST /api/chat — conversation IDOR guard', () => {
 
         await POST(post({
             messages: [{ role: 'user', content: 'hello' }],
-            model: 'tura-3',
+            model: 'taipei4',
             conversationId: '22222222-2222-4222-8222-222222222222',
         }));
 

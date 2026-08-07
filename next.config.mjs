@@ -20,6 +20,8 @@ const nextConfig = {
     NEXT_PUBLIC_APP_TAGLINE: appConfig.app.tagline,
     NEXT_PUBLIC_APP_DESCRIPTION: appConfig.app.description,
     NEXT_PUBLIC_CUSTOM_MODELS: JSON.stringify(pickerModels),
+    // OpenCode web UI server embedded in the Code workspace.
+    NEXT_PUBLIC_OPENCODE_URL: process.env.OPENCODE_URL || 'http://localhost:4096',
   },
   compress: true,
   // A stray lockfile in $HOME makes Turbopack infer the wrong workspace root.

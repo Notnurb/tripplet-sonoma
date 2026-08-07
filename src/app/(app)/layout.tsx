@@ -140,9 +140,10 @@ export default function AppLayout({
                 />
 
                 {/* Sidebar — in-flow on desktop, off-canvas drawer on mobile */}
-                <div
-                    className={cn(
-                        'max-md:fixed max-md:inset-y-0 max-md:left-0 max-md:z-50 max-md:transition-transform max-md:duration-300 max-md:ease-out max-md:will-change-transform md:relative',
+                 <div
+                     className={cn(
+                         pathname === '/build' || pathname?.startsWith('/build/') ? 'hidden' : '',
+                         'max-md:fixed max-md:inset-y-0 max-md:left-0 max-md:z-50 max-md:transition-transform max-md:duration-300 max-md:ease-out max-md:will-change-transform md:relative',
                         mobileOpen ? 'max-md:translate-x-0 max-md:shadow-2xl' : 'max-md:-translate-x-full',
                     )}
                 >
@@ -155,7 +156,7 @@ export default function AppLayout({
                 </div>
 
                 <main className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
-                    <MobileHeader onOpenMenu={() => setMobileOpen(true)} />
+                     {! (pathname === '/build' || pathname?.startsWith('/build/')) && <MobileHeader onOpenMenu={() => setMobileOpen(true)} />}
                     <div className="relative flex min-h-0 flex-1 flex-col">
                         {children}
                     </div>

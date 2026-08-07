@@ -76,12 +76,12 @@ export const MODEL_META: Record<string, {
     outputPricePerM: number;
     contextWindow: number;
 }> = {
-    'tura-3':   { displayName: 'Taipei 3.1',  inputPricePerM: 3,  outputPricePerM: 15, contextWindow: 131072 },
-    'majuli-3': { displayName: 'Majuli 3.1',  inputPricePerM: 2,  outputPricePerM: 10, contextWindow: 131072 },
-    'suzhou-3': { displayName: 'Suzhou 3.1',  inputPricePerM: 2,  outputPricePerM: 10, contextWindow: 131072 },
+    'taipei4':   { displayName: 'Taipei 3.1',  inputPricePerM: 3,  outputPricePerM: 15, contextWindow: 131072 },
+    'majuli4': { displayName: 'Majuli 3.1',  inputPricePerM: 2,  outputPricePerM: 10, contextWindow: 131072 },
+    'suzhou4': { displayName: 'Suzhou 3.1',  inputPricePerM: 2,  outputPricePerM: 10, contextWindow: 131072 },
 };
 
-export const DEFAULT_MODEL = 'suzhou-3';
+export const DEFAULT_MODEL = 'suzhou4';
 
 // ─── Slash Commands Reference ─────────────────────────────────────────────────
 

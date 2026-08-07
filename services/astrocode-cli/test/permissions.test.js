@@ -114,3 +114,45 @@ test('setMode switches behaviour at runtime', () => {
   p.setMode('yolo');
   assert.equal(p.check('write', { path: 'a.js', content: '' }), 'allow');
 });
+
+// These only mean anything on Windows, where paths are case-insensitive and
+// use backslash separators — the astrocode Windows CI job runs them for real.
+// On POSIX they are skipped rather than asserting macOS behaviour against
+// Windows fixtures.
+test('windows: path rules are backslash-tolerant and case-insensitive', (t) => {
+  if (process.platform !== 'win32') return t.skip('windows-only');
+  const cwd = 'C:\\Users\\me\\project';
+
+  const p = new Permissions({ mode: 'ask', cwd });
+  assert.equal(p.check('write', { path: 'src\\foo.js', content: '' }), 'ask',
+    'a backslash path inside cwd is not denied');
+  assert.equal(p.check('write', { path: 'SRC\\FOO.JS', content: '' }), 'ask',
+    'differently-cased inside path is still inside');
+  assert.equal(p.check('write', { path: 'C:\\Users\\ME\\PROJECT\\src\\bar.js', content: '' }), 'ask',
+    'absolute path that resolves inside cwd (mixed case) is allowed');
+  assert.equal(p.check('write', { path: 'C:\\Windows\\evil.bat', content: '' }), 'deny',
+    'absolute path outside cwd is denied');
+  assert.equal(p.check('edit', { path: '..\\..\\secrets.env' }), 'deny',
+    'traversal via backslashes is denied');
+});
+
+test('windows: allow rules match paths case-insensitively', (t) => {
+  if (process.platform !== 'win32') return t.skip('windows-only');
+  const cwd = 'C:\\Users\\me\\project';
+
+  const rel = new Permissions({ mode: 'ask', cwd, allow: ['Write(SRC/**.js)'] });
+  assert.equal(rel.check('write', { path: 'src\\A.js', content: '' }), 'allow',
+    'rule written in uppercase matches a lowercase path');
+
+  const abs = new Permissions({
+    mode: 'ask',
+    cwd,
+    allow: ['Write(C:/USERS/ME/PROJECT/SRC/**)'],
+  });
+  assert.equal(abs.check('write', { path: 'src\\B.js', content: '' }), 'allow',
+    'absolute rule matches a mixed-case target');
+
+  const caseSensitive = new Permissions({ mode: 'ask', cwd, deny: ['Write(SRC/**)'] });
+  assert.equal(caseSensitive.check('write', { path: 'src\\x.js', content: '' }), 'deny',
+    'deny rule also matches case-insensitively');
+});

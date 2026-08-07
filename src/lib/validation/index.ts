@@ -78,7 +78,7 @@ export const modelIdSchema = z
     .string()
     .trim()
     .max(100, 'Model ID too long')
-    .default('suzhou-3');
+    .default('suzhou4');
 
 const VALID_ROLES = ['user', 'assistant', 'system', 'data'] as const;
 const VALID_MODES = [

@@ -146,8 +146,8 @@ function GeneralSection() {
             <SectionDivider label="Chat" />
             <SettingRow label="Default model" description="The model selected when you open a new chat.">
                 <select className="text-xs bg-muted/50 border border-border rounded-lg px-2.5 py-1.5 text-foreground focus:outline-none focus:ring-1 focus:ring-brand/30">
-                    <option value="suzhou-3">Suzhou 3.1</option>
-                    <option value="majuli-3">Majuli 3.1</option>
+                    <option value="suzhou4">Suzhou 3.1</option>
+                    <option value="majuli4">Majuli 3.1</option>
                     <option value="taipei-3">Taipei 3.1</option>
                 </select>
             </SettingRow>

@@ -2,9 +2,9 @@
 //
 // The four workspace personas are served by OpenCode Zen (OpenAI-compatible):
 //   astro-5  (Astro 5)  → glm-5.2               — flagship (OPENCODE_ZEN_MODEL)
-//   tura-3   (Taipei 4) → glm-5.2
-//   majuli-3 (Majuli 4) → claude-sonnet-4-6
-//   suzhou-3 (Suzhou 4) → nemotron-3-ultra-free
+//   taipei4   (Taipei 4) → glm-5.2
+//   majuli4 (Majuli 4) → claude-sonnet-4-6
+//   suzhou4 (Suzhou 4) → nemotron-3-ultra-free
 //
 // Groq (also OpenAI-compatible) remains the fallback provider for any other
 // persona id and for the fixed-model utility routes (title/sandbox/execute).
@@ -20,10 +20,10 @@ export const LLM_API_URL =
 export const LLM_API_KEY = process.env.GROQ_API_KEY || '';
 
 export const GROQ_MODEL_BY_PERSONA: Record<string, string> = {
-    'tura-3': 'openai/gpt-oss-120b',
+    'taipei4': 'openai/gpt-oss-120b',
     'taipei-3': 'openai/gpt-oss-120b',
-    'majuli-3': 'llama-3.3-70b-versatile',
-    'suzhou-3': 'openai/gpt-oss-20b',
+    'majuli4': 'llama-3.3-70b-versatile',
+    'suzhou4': 'openai/gpt-oss-20b',
 };
 
 export const LLM_DEFAULT_MODEL = 'llama-3.3-70b-versatile';
@@ -60,10 +60,10 @@ export const OPENCODE_ZEN_MODEL_BY_PERSONA: Record<string, string> = {
     // Deep Code persona — the pipeline is orchestrated in /api/sonoma; this
     // mapping is the fallback for auxiliary single-shot calls (e.g. tools).
     [DEEP_CODE_PERSONA]: DEEP_CODE_CODER_MODEL,
-    'tura-3': OPENCODE_ZEN_MODEL,        // Taipei
+    'taipei4': OPENCODE_ZEN_MODEL,        // Taipei
     'taipei-3': OPENCODE_ZEN_MODEL,
-    'majuli-3': 'claude-sonnet-4-6',     // Majuli
-    'suzhou-3': 'nemotron-3-ultra-free', // Suzhou
+    'majuli4': 'claude-sonnet-4-6',     // Majuli
+    'suzhou4': 'nemotron-3-ultra-free', // Suzhou
     // Legacy personas — opt-in via the "Legacy Models" setting.
     'legacy-synthara-5.2-plus': 'kimi-k2.5',    // Synthara 5.2 Plus
     'legacy-taipei-3': 'glm-5',                 // Taipei 3

@@ -387,7 +387,11 @@ export const CAMERA_HTML = `<!DOCTYPE html>
         overlay.style.display = 'none';
         status.innerHTML = '<span style="color:#0f0">● Live</span>';
       } catch (e) {
-        status.innerHTML = '<span style="color:#f66">Access denied: ' + e.message + '</span>';
+        status.replaceChildren();
+        const err = document.createElement('span');
+        err.style.color = '#f66';
+        err.textContent = 'Access denied: ' + e.message;
+        status.appendChild(err);
       }
     }
 

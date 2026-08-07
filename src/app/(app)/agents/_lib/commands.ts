@@ -165,7 +165,7 @@ export function executeSlashCommand(
 
         case '/model': {
             const modelMap: Record<string, string> = {
-                taipei: 'tura-3', majuli: 'majuli-3', suzhou: 'suzhou-3',
+                taipei: 'taipei4', majuli: 'majuli4', suzhou: 'suzhou4',
             };
             const newModel = modelMap[arg.toLowerCase()];
             if (newModel) {

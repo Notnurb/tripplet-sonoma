@@ -1,15 +1,8 @@
-'use client';
+import { redirect } from 'next/navigation';
 
-import { useParams } from 'next/navigation';
-import SonomaChatShell from '@/components/Sonoma/ChatShell';
-import VideoBackdrop from '@/components/Sonoma/VideoBackdrop';
-
+// The Code workspace is the OpenCode web UI, which manages its own session
+// URLs. Tripplet conversation ids no longer map to code routes, so fold any
+// legacy /code/[id] deep link into the workspace index.
 export default function CodeIdPage() {
-    const params = useParams();
-    const id = typeof params?.id === 'string' ? params.id : undefined;
-    return (
-        <VideoBackdrop>
-            <SonomaChatShell page="code" conversationId={id} transparent />
-        </VideoBackdrop>
-    );
+    redirect('/code');
 }

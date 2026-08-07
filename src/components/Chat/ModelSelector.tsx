@@ -16,9 +16,9 @@ import { LockIcon } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 const MODEL_META: Record<string, { bestFor: string; speed: number; depth: number }> = {
-    'tura-3':    { bestFor: 'Hard problems, deep research', speed: 2, depth: 5 },
-    'majuli-3':  { bestFor: 'Quick answers, fast Q&A',      speed: 5, depth: 3 },
-    'suzhou-3':  { bestFor: 'Stories, brainstorming, creative', speed: 4, depth: 4 },
+    'taipei4':    { bestFor: 'Hard problems, deep research', speed: 2, depth: 5 },
+    'majuli4':  { bestFor: 'Quick answers, fast Q&A',      speed: 5, depth: 3 },
+    'suzhou4':  { bestFor: 'Stories, brainstorming, creative', speed: 4, depth: 4 },
 };
 
 function ModelBar({ value, max = 5, color }: { value: number; max?: number; color: string }) {
@@ -68,7 +68,7 @@ function ModelSelector({
     );
     const dropdownTitle = menuTitle ?? 'Model';
 
-    const isTaipei = selectedModel.id === 'tura-3';
+    const isTaipei = selectedModel.id === 'taipei4';
     const triggerLabel = extendedThinking
         ? `${selectedModel.name} · Expanded`
         : selectedModel.name;
@@ -102,7 +102,7 @@ function ModelSelector({
             <DropdownMenuContent align="start" className="w-[260px] p-1.5">
                 <div className="px-2 py-1 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">{dropdownTitle}</div>
                 {options.map((model) => {
-                    const isTaipei = model.id === 'tura-3';
+                    const isTaipei = model.id === 'taipei4';
                     const isLocked = isTaipei && isLoaded && !isSignedIn;
                     const meta = MODEL_META[model.id];
                     const isSelected = selectedModelId === model.id;

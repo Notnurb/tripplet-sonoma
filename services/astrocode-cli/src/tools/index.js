@@ -321,15 +321,38 @@ const bash = {
     }
 
     const timeout = Math.min(Math.max(input.timeout || 120_000, 1000), 600_000);
-    const shell = process.env.SHELL && !process.env.SHELL.includes('fish')
-      ? process.env.SHELL
-      : '/bin/sh';
+
+    // On Windows there is no /bin/sh or $SHELL; cmd.exe is the portable shell
+    // and /d /s /c swallows the command string the same way `sh -c` does.
+    const isWin = process.platform === 'win32';
+    const shell = isWin
+      ? process.env.ComSpec || 'cmd.exe'
+      : process.env.SHELL && !process.env.SHELL.includes('fish')
+        ? process.env.SHELL
+        : '/bin/sh';
+    const shellArgs = (command) =>
+      isWin ? ['/d', '/s', '/c', command] : ['-c', command];
+
+    // Windows signals are process-local: `child.kill('SIGTERM')` would leave
+    // grandchildren running (and hold the cwd lock). taskkill /t /f tears down
+    // the whole tree. On POSIX the signal path works as-is.
+    const killTree = (child, signal) => {
+      if (isWin && child.pid) {
+        const killer = spawn('taskkill', ['/pid', String(child.pid), '/t', '/f'], {
+          stdio: 'ignore',
+        });
+        killer.on('error', () => { try { child.kill('SIGKILL'); } catch { /* gone */ } });
+      } else {
+        try { child.kill(signal); } catch { /* already gone */ }
+      }
+    };
+
     const startedAt = Date.now();
 
     return new Promise((resolve) => {
       let child;
       try {
-        child = spawn(shell, ['-c', command], {
+        child = spawn(shell, shellArgs(command), {
           cwd,
           env: { ...process.env, ASTROCODE: '1', TERM: process.env.TERM || 'xterm-256color' },
           stdio: ['ignore', 'pipe', 'pipe'],
@@ -357,7 +380,7 @@ const bash = {
       child.stdout.on('data', (c) => append('out', c));
       child.stderr.on('data', (c) => append('err', c));
 
-      const kill = (signal) => { try { child.kill(signal); } catch { /* already gone */ } };
+      const kill = (signal) => killTree(child, signal);
 
       const timer = setTimeout(() => {
         timedOut = true;

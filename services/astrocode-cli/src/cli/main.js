@@ -10,6 +10,7 @@
 import process from 'node:process';
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { parseArgs, helpText, versionText } from './args.js';
 import { loadConfig, applyFlags, ensureDirs } from '../core/config.js';
@@ -26,7 +27,10 @@ export const VERSION = readVersion();
 
 function readVersion() {
   try {
-    const here = path.dirname(new URL(import.meta.url).pathname);
+    // fileURLToPath (not `.pathname`): on Windows an ESM file URL pathname is
+    // `/C:/...`, which path.dirname turns into `\C:\...` — wrong on every
+    // platform, fatal on Windows.
+    const here = path.dirname(fileURLToPath(import.meta.url));
     const pkg = JSON.parse(fs.readFileSync(path.join(here, '..', '..', 'package.json'), 'utf8'));
     return pkg.version || '0.1.0';
   } catch {

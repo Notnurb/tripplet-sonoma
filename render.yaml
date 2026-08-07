@@ -10,3 +10,11 @@ services:
         value: 8080
       - key: RELAY_PUBLIC_URL
         value: wss://relay.getsonoma.lol/ws
+      # REQUIRED for production: without this the relay runs in dev-trust mode
+      # where any caller can claim any account_id (see server.js boot warning).
+      # Must equal the app's JWT_SECRET so client session tokens verify. Set the
+      # value via the Render dashboard (sync: false means it is not committed).
+      - key: TRIPPLET_JWT_SECRET
+        sync: false
+      - key: NODE_ENV
+        value: production

@@ -324,7 +324,7 @@ export async function POST(request: NextRequest) {
 
     try {
         const body = await request.json();
-        const { task, history = [], model = 'tura-3' } = body;
+        const { task, history = [], model = 'taipei4' } = body;
 
         if (!task || typeof task !== 'string') {
             return NextResponse.json({ error: 'Task description is required.' }, { status: 400 });

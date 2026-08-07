@@ -95,6 +95,19 @@ export function mergeActivity(
     return next;
 }
 
+// Patch a run_bash card with the VM's live, in-progress terminal output while
+// it's still running — this is what makes the card feel like a real terminal
+// instead of a spinner that only reveals output once the command finishes.
+export function updateBashActivity(
+    list: SonomaActivity[],
+    activityId: string,
+    partialOutput: string,
+): SonomaActivity[] {
+    return list.map((a) =>
+        a.id === activityId ? { ...a, result: { output: partialOutput } } : a,
+    );
+}
+
 // Complete a run_bash card with the VM's real output.
 export function finishBashActivity(
     list: SonomaActivity[],

@@ -18,6 +18,7 @@ import {
     SonomaBrowse,
     SonomaReason,
     SonomaTerminal,
+    SonomaPenguin,
 } from './icons';
 import { CodeBlock } from './CodeBlock';
 import { FileCard } from './FileCard';
@@ -288,9 +289,11 @@ function ActivityLabel({ a }: { a: SonomaActivity }) {
         case 'run_python':
             return <>Running Python</>;
         case 'run_bash':
-            return <>Running bash</>;
+            return <>Running Linux</>;
         case 'run_on_machine':
             return <>Running on <span style={{ color: 'var(--sonoma-accent-2)' }}>{String(a.args.machine_name ?? 'your machine')}</span></>;
+        case 'spawn_subagent':
+            return <>Working with a subagent{a.args.task ? ` · ${String(a.args.task).slice(0, 80)}` : ''}</>;
         case 'search_past_chats': {
             const q = String(a.args.query ?? '').trim();
             return q
@@ -473,6 +476,7 @@ function ActivityCard({
             </div>
         );
     } else if (a.tool === 'run_python' || a.tool === 'run_bash' || a.tool === 'run_on_machine') {
+        const isBash = a.tool === 'run_bash';
         const code = String(a.tool === 'run_python' ? a.args.code ?? '' : a.args.command ?? '');
         const out =
             a.permission === 'denied'
@@ -494,21 +498,27 @@ function ActivityCard({
                         borderRadius: 10,
                     }}
                 >
-                    {code}
+                    {isBash ? `$ ${code}` : code}
                 </pre>
-                {out && (
+                {(out || (isBash && a.status === 'running')) && (
                     <pre
-                        className="max-h-[160px] overflow-auto text-[12px]"
+                        className="max-h-[220px] overflow-auto text-[12px]"
                         style={{
                             fontFamily: 'var(--font-mono)',
-                            background: 'var(--sonoma-bg-2)',
+                            background: isBash ? 'oklch(0.15 0.01 250)' : 'var(--sonoma-bg-2)',
                             border: '1px solid var(--sonoma-border)',
                             padding: 10,
                             borderRadius: 10,
-                            color: 'var(--sonoma-ink-2)',
+                            color: isBash ? 'oklch(0.85 0.03 150)' : 'var(--sonoma-ink-2)',
                         }}
                     >
                         {out}
+                        {isBash && a.status === 'running' && (
+                            <span
+                                className="ml-0.5 inline-block h-[12px] w-[7px] align-middle"
+                                style={{ background: 'oklch(0.85 0.03 150)', animation: 'sm-pulse 1s step-end infinite' }}
+                            />
+                        )}
                     </pre>
                 )}
             </div>
@@ -590,7 +600,9 @@ function ActivityCard({
                 >
                     {a.tool === 'web_search' || a.tool === 'fetch_url' || a.tool.startsWith('composio_') ? (
                         <SonomaBrowse size={14} />
-                    ) : a.tool === 'run_bash' || a.tool === 'run_python' || a.tool === 'run_on_machine' ? (
+                    ) : a.tool === 'run_bash' ? (
+                        <SonomaPenguin size={14} />
+                    ) : a.tool === 'run_python' || a.tool === 'run_on_machine' ? (
                         <SonomaTerminal size={14} />
                     ) : (
                         <SonomaReason size={14} />

@@ -22,17 +22,17 @@ import MessageBubble from '@/components/Chat/MessageBubble';
 
 const HIVEMIND_MODELS: Model[] = [
     {
-        id: 'tura-3',
+        id: 'taipei4',
         name: 'Taipei 3.1',
         description: 'Advanced reasoning and analysis',
     },
     {
-        id: 'majuli-3',
+        id: 'majuli4',
         name: 'Majuli 3.1',
         description: 'Fast and concise responses',
     },
     {
-        id: 'suzhou-3',
+        id: 'suzhou4',
         name: 'Suzhou 3.1',
         description: 'Creative and detailed generation',
     },

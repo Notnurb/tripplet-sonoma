@@ -20,7 +20,7 @@ function conv(id: string, updatedAt: string, title = id) {
     return {
         id,
         title,
-        model: 'tura-3',
+        model: 'taipei4',
         createdAt: '2026-01-01T00:00:00.000Z',
         updatedAt,
         messages: [{ id: `${id}-m`, role: 'user', content: 'hi', timestamp: '2026-01-01T00:00:00.000Z' }],
@@ -94,7 +94,7 @@ describe('useConversations — CRUD', () => {
     it('createConversation adds a conversation and makes it active', async () => {
         const { result } = await mounted();
         let newId = '';
-        act(() => { newId = result.current.createConversation('tura-3'); });
+        act(() => { newId = result.current.createConversation('taipei4'); });
         expect(newId).toBeTruthy();
         expect(result.current.activeConversationId).toBe(newId);
         expect(result.current.conversations.some((c) => c.id === newId)).toBe(true);
@@ -102,15 +102,15 @@ describe('useConversations — CRUD', () => {
 
     it('createConversation is idempotent for a given id (no duplicate)', async () => {
         const { result } = await mounted();
-        act(() => { result.current.createConversation('tura-3', 'fixed-id'); });
-        act(() => { result.current.createConversation('tura-3', 'fixed-id'); });
+        act(() => { result.current.createConversation('taipei4', 'fixed-id'); });
+        act(() => { result.current.createConversation('taipei4', 'fixed-id'); });
         expect(result.current.conversations.filter((c) => c.id === 'fixed-id')).toHaveLength(1);
     });
 
     it('deleteConversation removes it and clears active when it was active', async () => {
         const { result } = await mounted();
         let id = '';
-        act(() => { id = result.current.createConversation('tura-3'); });
+        act(() => { id = result.current.createConversation('taipei4'); });
         act(() => { result.current.deleteConversation(id); });
         expect(result.current.conversations.some((c) => c.id === id)).toBe(false);
         expect(result.current.activeConversationId).toBeNull();
@@ -119,7 +119,7 @@ describe('useConversations — CRUD', () => {
     it('renameConversation updates the title (and ignores empty)', async () => {
         const { result } = await mounted();
         let id = '';
-        act(() => { id = result.current.createConversation('tura-3'); });
+        act(() => { id = result.current.createConversation('taipei4'); });
         act(() => { result.current.renameConversation(id, '  Renamed  '); });
         expect(result.current.conversations.find((c) => c.id === id)?.title).toBe('Renamed');
         act(() => { result.current.renameConversation(id, '   '); });
@@ -129,8 +129,8 @@ describe('useConversations — CRUD', () => {
     it('saveConversation upserts a full message list', async () => {
         const { result } = await mounted();
         const msgs = [
-            { id: 'm1', role: 'user' as const, content: 'What is 2+2?', timestamp: new Date(), model: 'tura-3' },
-            { id: 'm2', role: 'assistant' as const, content: '4', timestamp: new Date(), model: 'tura-3' },
+            { id: 'm1', role: 'user' as const, content: 'What is 2+2?', timestamp: new Date(), model: 'taipei4' },
+            { id: 'm2', role: 'assistant' as const, content: '4', timestamp: new Date(), model: 'taipei4' },
         ];
         act(() => { result.current.saveConversation('conv-x', msgs, 'astro-5-code'); });
         const saved = result.current.conversations.find((c) => c.id === 'conv-x');

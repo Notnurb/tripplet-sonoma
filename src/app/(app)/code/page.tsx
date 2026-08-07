@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import SonomaChatShell from '@/components/Sonoma/ChatShell';
+import OpenCodeFrame from '@/components/Sonoma/OpenCodeFrame';
 import ManageDevicesModal from '@/components/Sonoma/ManageDevicesModal';
 import VideoBackdrop from '@/components/Sonoma/VideoBackdrop';
 import { Plus, Settings2 } from 'lucide-react';
@@ -38,7 +38,7 @@ export default function CodeIndexPage() {
                 </button>
             </div>
             <ManageDevicesModal open={manageOpen} onClose={() => setManageOpen(false)} />
-            <SonomaChatShell page="code" transparent />
+            <OpenCodeFrame />
         </VideoBackdrop>
     );
 }

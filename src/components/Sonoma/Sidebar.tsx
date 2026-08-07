@@ -7,7 +7,7 @@ import { useChatActions, useChatConversations } from '@/context/ChatContext';
 import { type User, useAuth } from '@/context/AuthContext';
 import { cn } from '@/lib/utils';
 import { HugeiconsIcon } from '@hugeicons/react';
-import { Book01Icon, Logout02Icon, PaintBoardIcon, Settings05Icon } from '@hugeicons/core-free-icons';
+import { AnvilIcon, Book01Icon, Logout02Icon, PaintBoardIcon, Settings05Icon } from '@hugeicons/core-free-icons';
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -27,8 +27,13 @@ function TriplepediaIcon({ size = 18 }: { size?: number }) {
     return <HugeiconsIcon icon={Book01Icon} size={size} strokeWidth={1.8} />;
 }
 
+function BuildIcon({ size = 18 }: { size?: number }) {
+    return <HugeiconsIcon icon={AnvilIcon} size={size} strokeWidth={1.8} />;
+}
+
 const PAGES = [
     { id: 'chat', label: 'Chat', icon: SonomaChat, href: '/chat' },
+    { id: 'build', label: 'Build', icon: BuildIcon, href: '/build' },
     { id: 'code', label: 'Code', icon: SonomaCode, href: '/code' },
     { id: 'triplepedia', label: 'Triplepedia', icon: TriplepediaIcon, href: '/triplepedia' },
 ];

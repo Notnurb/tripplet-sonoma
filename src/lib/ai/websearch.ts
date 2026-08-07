@@ -1,4 +1,7 @@
 import { lookup } from 'node:dns/promises';
+import { request as httpsRequest } from 'node:https';
+import { request as httpRequest } from 'node:http';
+import type { IncomingHttpHeaders, IncomingMessage, RequestOptions } from 'node:http';
 import { backendFetch } from '@/lib/backend';
 
 export interface SearchResult {
@@ -232,34 +235,44 @@ function isPrivateHost(hostname: string): boolean {
     return false;
 }
 
-export async function assertFetchableUrl(url: URL): Promise<void> {
+export type ResolvedAddress = { address: string; family: number };
+
+// Resolve a URL's hostname and reject it if ANY answer is a private/loopback/
+// link-local address. Returns the validated addresses so the caller can pin
+// the connect to them (see fetchPinnedPage) — otherwise the DNS lookups here
+// and the one fetch() does internally are separate, which is the DNS-rebinding
+// TOCTOU window.
+async function resolvePublicAddresses(url: URL): Promise<ResolvedAddress[]> {
     if (url.protocol !== 'http:' && url.protocol !== 'https:') {
         throw new Error('Only http(s) URLs can be fetched.');
     }
     if (isPrivateHost(url.hostname)) {
         throw new Error('This host cannot be fetched.');
     }
-    // DNS-rebinding guard: the string checks above can't see what a NAME
-    // resolves to — a public-looking hostname with an A record pointing at
-    // 10.0.0.5 would pass them. Resolve every address and re-check each one.
-    // (Residual TOCTOU: fetch() re-resolves for the actual connect, so a DNS
-    // answer that flips between this check and the socket open is still
-    // possible; closing that fully requires socket-level IP pinning.)
-    if (/[a-z]/.test(url.hostname.toLowerCase())) {
-        let addrs: Array<{ address: string; family: number }>;
-        try {
-            addrs = await lookup(url.hostname, { all: true, verbatim: true });
-        } catch {
-            // NXDOMAIN / resolver failure — the fetch could never succeed, and
-            // proceeding unvalidated is not an option.
-            throw new Error('This host cannot be fetched.');
-        }
-        if (addrs.length === 0) throw new Error('This host cannot be fetched.');
-        for (const { address, family } of addrs) {
-            const blocked = family === 6 ? isPrivateIpv6(address) : isPrivateIpv4(address);
-            if (blocked) throw new Error('This host cannot be fetched.');
-        }
+    if (!/[a-z]/.test(url.hostname.toLowerCase())) {
+        // Letterless host = an IPv4 literal (IPv6 literals are blocked above by
+        // isPrivateHost). It connects to the literal itself — no DNS involved,
+        // so no rebinding window. Return it so the pinned connect uses it.
+        return [{ address: url.hostname, family: 4 }];
     }
+    let addrs: ResolvedAddress[];
+    try {
+        addrs = await lookup(url.hostname, { all: true, verbatim: true });
+    } catch {
+        // NXDOMAIN / resolver failure — the fetch could never succeed, and
+        // proceeding unvalidated is not an option.
+        throw new Error('This host cannot be fetched.');
+    }
+    if (addrs.length === 0) throw new Error('This host cannot be fetched.');
+    for (const { address, family } of addrs) {
+        const blocked = family === 6 ? isPrivateIpv6(address) : isPrivateIpv4(address);
+        if (blocked) throw new Error('This host cannot be fetched.');
+    }
+    return addrs;
+}
+
+export async function assertFetchableUrl(url: URL): Promise<void> {
+    await resolvePublicAddresses(url);
 }
 
 // Cap how much of a page body we read — the URL comes from untrusted web
@@ -267,44 +280,99 @@ export async function assertFetchableUrl(url: URL): Promise<void> {
 const MAX_BODY_BYTES = 2_000_000;
 const MAX_REDIRECTS = 3;
 
+export interface PinnedPage {
+    status: number;
+    headers: IncomingHttpHeaders;
+    body: string;
+}
+
+// Fetch a URL by connecting DIRECTLY to an address that passed the SSRF guard.
+// The hostname is only sent in the Host header / TLS SNI, so the socket
+// address is fixed at resolution time: a DNS answer that flips between the
+// guard and the connect can no longer redirect the request to a private host.
+// This closes the DNS-rebinding TOCTOU that plain fetch() (which re-resolves
+// for the connect) is subject to.
+export async function fetchPinnedPage(
+    target: URL,
+    opts: { maxBytes: number; timeoutMs?: number; headers?: Record<string, string> },
+): Promise<PinnedPage> {
+    const addresses = await resolvePublicAddresses(target);
+    const connectAddress = addresses[0];
+    const isTls = target.protocol === 'https:';
+    const requestFn = isTls ? httpsRequest : httpRequest;
+
+    const baseOptions: RequestOptions = {
+        host: connectAddress.address,
+        port: target.port ? Number(target.port) : isTls ? 443 : 80,
+        path: target.pathname + target.search,
+        headers: {
+            Host: target.host,
+            'User-Agent': 'Mozilla/5.0 (compatible; TrippletBot/1.0)',
+            ...opts.headers,
+        },
+        timeout: opts.timeoutMs ?? 10_000,
+    };
+
+    const handleResponse = (res: IncomingMessage, req: ReturnType<typeof httpsRequest>): void => {
+        let body = '';
+        let bytes = 0;
+        res.on('data', (chunk: Buffer | string) => {
+            bytes += Buffer.byteLength(chunk);
+            if (bytes > opts.maxBytes) {
+                req.destroy(new Error('Response too large.'));
+                return;
+            }
+            body += chunk;
+        });
+        res.on('error', (err: Error) => req.destroy(err));
+        res.on('end', () => {
+            resolve({ status: res.statusCode ?? 0, headers: res.headers, body });
+        });
+    };
+
+    return new Promise<PinnedPage>((resolve, reject) => {
+        let req: ReturnType<typeof httpsRequest>;
+        if (isTls) {
+            req = httpsRequest(
+                { ...baseOptions, servername: target.hostname, rejectUnauthorized: true },
+                (res) => handleResponse(res, req),
+            );
+        } else {
+            req = httpRequest(baseOptions as RequestOptions, (res) => handleResponse(res, req));
+        }
+        req.on('error', reject);
+        req.on('timeout', () => req.destroy(new Error('Request timed out.')));
+        req.end();
+    });
+}
+
 export async function fetchPageText(url: string, maxChars = 8000): Promise<string> {
     // Follow redirects manually so every hop is re-checked against the
     // private-host guard (a public URL 302-ing to an internal one is the
     // classic SSRF bypass).
     let target = new URL(url);
-    let resp: Response | null = null;
+    let html = '';
+    let status = 0;
     for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
-        await assertFetchableUrl(target);
-        resp = await fetch(target.toString(), {
-            headers: { 'User-Agent': 'Mozilla/5.0 (compatible; TrippletBot/1.0)' },
-            redirect: 'manual',
-            signal: AbortSignal.timeout(10_000),
-        });
+        const resp = await fetchPinnedPage(target, { maxBytes: MAX_BODY_BYTES, timeoutMs: 10_000 });
         if (resp.status >= 300 && resp.status < 400) {
-            const loc = resp.headers.get('location');
+            const locRaw = resp.headers.location;
+            const loc = Array.isArray(locRaw) ? locRaw[0] : locRaw;
             if (!loc || hop === MAX_REDIRECTS) throw new Error('Too many redirects.');
             target = new URL(loc, target);
             continue;
         }
-        break;
+        if (resp.status >= 200 && resp.status < 300) {
+            html = resp.body;
+            status = resp.status;
+            break;
+        }
+        throw new Error(`Page fetch failed with status ${resp.status}`);
     }
-    if (!resp || !resp.ok) {
-        throw new Error(`Page fetch failed with status ${resp ? resp.status : 'unknown'}`);
+    if (status < 200 || status >= 300) {
+        throw new Error(`Page fetch failed with status ${status || 'unknown'}`);
     }
 
-    let html = '';
-    if (resp.body) {
-        const reader = resp.body.getReader();
-        const decoder = new TextDecoder();
-        let bytes = 0;
-        while (bytes < MAX_BODY_BYTES) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            bytes += value.byteLength;
-            html += decoder.decode(value, { stream: true });
-        }
-        await reader.cancel().catch(() => undefined);
-    }
     const text = html
         .replace(/<script[\s\S]*?<\/script>/gi, ' ')
         .replace(/<style[\s\S]*?<\/style>/gi, ' ')

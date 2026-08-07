@@ -178,6 +178,31 @@ export function SonomaPlug({ size = 16, color, ...rest }: IconProps) {
     );
 }
 
+// Penguin mark (Tux-style) — used by the Tripplet Sandboxed Linux (run_bash)
+// activity card so it reads as "a real Linux VM", not just a generic shell.
+export function SonomaPenguin({ size = 16, color, ...rest }: IconProps) {
+    return (
+        <svg
+            width={size}
+            height={size}
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke={color || 'currentColor'}
+            strokeWidth={1.6}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden
+            {...rest}
+        >
+            <path d="M12 2.5c-2.6 0-4.4 2-4.4 4.6 0 1.1.2 1.9.5 2.7-1.6 1.4-2.6 3.7-2.6 6.4 0 3 1.7 5.3 3.2 5.3.6 0 .8-.4 1-1l.3-1.1c.3-.9.6-1.2 2-1.2s1.7.3 2 1.2l.3 1.1c.2.6.4 1 1 1 1.5 0 3.2-2.3 3.2-5.3 0-2.7-1-5-2.6-6.4.3-.8.5-1.6.5-2.7 0-2.6-1.8-4.6-4.4-4.6Z" />
+            <circle cx="10.2" cy="8.3" r="0.6" fill={color || 'currentColor'} stroke="none" />
+            <circle cx="13.8" cy="8.3" r="0.6" fill={color || 'currentColor'} stroke="none" />
+            <path d="M11 10.3h2l-1 1.3-1-1.3Z" fill={color || 'currentColor'} stroke="none" />
+            <path d="M8.6 13.2c-1 .5-1.7 1.4-2 2.6M15.4 13.2c1 .5 1.7 1.4 2 2.6" />
+        </svg>
+    );
+}
+
 // Terminal / command-line mark — used by the Tripplet Sandboxed Linux (bash) skill.
 export function SonomaTerminal({ size = 16, color, ...rest }: IconProps) {
     return (

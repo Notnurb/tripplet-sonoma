@@ -53,12 +53,17 @@ jobs:
           GROQ_API_KEY: gsk_ci_dummy
           OPENCODE_ZEN_API_KEY: zen_ci_dummy
       - name: Dependency audit (production tree, high severity)
+        # Blocking. NOTE: `next` lives in devDependencies (with undici/sharp in
+        # its tree), so `--omit=dev` deliberately does NOT cover the framework
+        # runtime here — the full-tree audit below is the one that surfaces
+        # those advisories. Next's HIGHs currently have no 15.x patched
+        # release; they are fixed by the Next 16 major bump (see review.md).
         run: npm audit --omit=dev --audit-level=high
       - name: Dependency audit (full tree, informational)
-        # Non-blocking: surfaces dev-tooling CVEs (e.g. esbuild dev-server) that
-        # the prod gate above intentionally excludes, so they stay visible in CI
-        # output without failing the build. Fixing them currently requires a
-        # breaking Next downgrade, so they're accepted; see review.md (Security).
+        # Non-blocking: this is the ONLY audit that covers the Next.js runtime
+        # (devDependencies), so it stays visible in CI output without failing
+        # the build — fixing next/undici/sharp requires the breaking Next 16
+        # upgrade, which is tracked rather than force-bumped here.
         run: npm audit || true
 
   e2e:

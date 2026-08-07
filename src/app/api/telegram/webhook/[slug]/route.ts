@@ -164,7 +164,7 @@ export async function POST(
         }
     }
 
-    const modelId = VALID_MODEL_IDS.has(bot.model) ? bot.model : 'majuli-3';
+    const modelId = VALID_MODEL_IDS.has(bot.model) ? bot.model : 'majuli4';
     // Store as string — Telegram chat ids can exceed JS safe-int range for
     // groups/channels (and our schema uses String anyway).
     const telegramChatId = String(msg.chat.id);

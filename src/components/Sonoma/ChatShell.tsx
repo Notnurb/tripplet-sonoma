@@ -11,7 +11,7 @@ import {
 import { loadSettings, SETTINGS_EVENT } from '@/lib/settings';
 import { useChatConversations, useChatActions } from '@/context/ChatContext';
 import { runBash, isVmDownloaded, bootVm } from '@/lib/sandbox/trippletLinux';
-import { readSonomaStream, mergeActivity, finishBashActivity } from '@/lib/sonoma/stream';
+import { readSonomaStream, mergeActivity, finishBashActivity, updateBashActivity } from '@/lib/sonoma/stream';
 import { takeChatHandoff } from '@/lib/sonoma/handoff';
 import { OUTAGE_ACTIVE } from '@/lib/outage';
 import type { Message } from '@/types';
@@ -95,6 +95,7 @@ interface DevOverride {
 
 interface SonomaChatShellProps {
     page?: WorkspacePage;
+    modelIds?: string[];
     conversationId?: string;
     transparent?: boolean;
     // /dev panel only: bypasses the OUTAGE_ACTIVE composer lock and routes the
@@ -148,7 +149,7 @@ function toUI(m: Message): UIMessage {
     };
 }
 
-export default function SonomaChatShell({ page = 'chat', conversationId, transparent = false, forceEnabled = false, devOverride }: SonomaChatShellProps = {}) {
+export default function SonomaChatShell({ page = 'chat', modelIds, conversationId, transparent = false, forceEnabled = false, devOverride }: SonomaChatShellProps = {}) {
     const router = useRouter();
     const isMobile = useIsMobile();
     const { conversations, historyLoaded } = useChatConversations();
@@ -186,8 +187,11 @@ export default function SonomaChatShell({ page = 'chat', conversationId, transpa
         DEEP_CODE_DEFAULT_REASONING_LEVEL,
     );
     const pageModels = useMemo(
-        () => modelsForPage(page, legacyModels, deepCode),
-        [page, legacyModels, deepCode],
+        () => {
+            const models = modelsForPage(page, legacyModels, deepCode);
+            return modelIds ? models.filter((candidate) => modelIds.includes(candidate.id)) : models;
+        },
+        [page, legacyModels, deepCode, modelIds],
     );
     const [model, setModel] = useState<string>(pageModels[0].id);
     const [uploaded, setUploaded] = useState<UploadedFile[]>([]);
@@ -359,7 +363,11 @@ export default function SonomaChatShell({ page = 'chat', conversationId, transpa
     const execBash = useCallback((assistantId: string, activityId: string, command: string) => {
         if (bashRunRef.current.has(activityId)) return;
         bashRunRef.current.add(activityId);
-        runBash(command).then((output) => {
+        runBash(command, (partial) => {
+            setMessages((prev) => prev.map((m) =>
+                m.id === assistantId ? { ...m, activity: updateBashActivity(m.activity, activityId, partial) } : m,
+            ));
+        }).then((output) => {
             setMessages((prev) => prev.map((m) =>
                 m.id === assistantId ? { ...m, activity: finishBashActivity(m.activity, activityId, output) } : m,
             ));

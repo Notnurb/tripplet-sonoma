@@ -478,7 +478,7 @@ client = OpenAI(
                             <div>
                                 <p className="text-[10px] font-mono text-muted-foreground/50 uppercase tracking-wider mb-2">3 · Chat completion</p>
                                 <CodeBlock lang="typescript" code={`const response = await client.chat.completions.create({
-  model: 'tura-3',
+  model: 'taipei4',
   messages: [
     { role: 'system', content: 'You are a helpful assistant.' },
     { role: 'user', content: 'Write a haiku about coding.' },
@@ -492,7 +492,7 @@ console.log(response.choices[0].message.content);`} />
                             <div>
                                 <p className="text-[10px] font-mono text-muted-foreground/50 uppercase tracking-wider mb-2">4 · Streaming</p>
                                 <CodeBlock lang="typescript" code={`const stream = await client.chat.completions.create({
-  model: 'suzhou-3',
+  model: 'suzhou4',
   messages: [{ role: 'user', content: 'Tell me a story.' }],
   stream: true,
 });
@@ -503,9 +503,9 @@ for await (const chunk of stream) {
                             </div>
 
                             <div>
-                                <p className="text-[10px] font-mono text-muted-foreground/50 uppercase tracking-wider mb-2">5 · Reasoning (tura-3)</p>
+                                <p className="text-[10px] font-mono text-muted-foreground/50 uppercase tracking-wider mb-2">5 · Reasoning (taipei4)</p>
                                 <CodeBlock lang="typescript" code={`const response = await client.chat.completions.create({
-  model: 'tura-3',
+  model: 'taipei4',
   messages: [{ role: 'user', content: 'Prove that sqrt(2) is irrational.' }],
   max_tokens: 4096,
 });`} />
@@ -514,7 +514,7 @@ for await (const chunk of stream) {
                             <div>
                                 <p className="text-[10px] font-mono text-muted-foreground/50 uppercase tracking-wider mb-2">6 · Tool use</p>
                                 <CodeBlock lang="typescript" code={`const response = await client.chat.completions.create({
-  model: 'tura-3',
+  model: 'taipei4',
   messages: [{ role: 'user', content: 'Research latest AI news.' }],
   tools: [{
     type: 'function',
@@ -580,7 +580,7 @@ for await (const chunk of stream) {
                                         { name: 'top_p', type: 'float', required: false, desc: 'Nucleus sampling value' },
                                         { name: 'stop', type: 'string[]', required: false, desc: 'Stop sequences' },
                                     ],
-                                    example: `curl ${publicApiBase}/chat/completions \\\n  -H "Authorization: Bearer trpl_sk_YOUR_API_KEY" \\\n  -H "Content-Type: application/json" \\\n  -d '{"model":"tura-3","messages":[{"role":"user","content":"Hello"}]}'`,
+                                    example: `curl ${publicApiBase}/chat/completions \\\n  -H "Authorization: Bearer trpl_sk_YOUR_API_KEY" \\\n  -H "Content-Type: application/json" \\\n  -d '{"model":"taipei4","messages":[{"role":"user","content":"Hello"}]}'`,
                                 },
                             ].map(ep => (
                                 <div key={ep.path} className="border border-border rounded-sm overflow-hidden">

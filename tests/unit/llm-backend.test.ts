@@ -22,7 +22,7 @@ describe('resolveBackend', () => {
         vi.stubEnv('OPENCODE_ZEN_API_KEY', 'zen_key');
         vi.stubEnv('GROQ_API_KEY', 'groq_key');
         const { resolveBackend, OPENCODE_ZEN_API_URL } = await import('@/lib/ai/llm');
-        for (const id of ['astro-5', 'tura-3', 'majuli-3', 'suzhou-3', 'legacy-taipei-3']) {
+        for (const id of ['astro-5', 'taipei4', 'majuli4', 'suzhou4', 'legacy-taipei-3']) {
             const t = resolveBackend(id);
             expect(t.provider).toBe('opencode-zen');
             expect(t.url).toBe(OPENCODE_ZEN_API_URL);
@@ -35,8 +35,8 @@ describe('resolveBackend', () => {
         vi.stubEnv('OPENCODE_ZEN_API_KEY', 'zen_key');
         vi.stubEnv('GROQ_API_KEY', 'groq_key');
         const { resolveBackend } = await import('@/lib/ai/llm');
-        expect(resolveBackend('majuli-3').model).toBe('claude-sonnet-4-6');
-        expect(resolveBackend('suzhou-3').model).toBe('nemotron-3-ultra-free');
+        expect(resolveBackend('majuli4').model).toBe('claude-sonnet-4-6');
+        expect(resolveBackend('suzhou4').model).toBe('nemotron-3-ultra-free');
     });
 
     it('falls back to Groq only for an unmapped persona id', async () => {

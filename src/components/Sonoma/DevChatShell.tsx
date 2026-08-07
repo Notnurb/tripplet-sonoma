@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { CHAT_MODELS } from '@/lib/ai/models';
 import { loadSettings, SETTINGS_EVENT } from '@/lib/settings';
 import { runBash, isVmDownloaded, bootVm } from '@/lib/sandbox/trippletLinux';
-import { readSonomaStream, mergeActivity, finishBashActivity } from '@/lib/sonoma/stream';
+import { readSonomaStream, mergeActivity, finishBashActivity, updateBashActivity } from '@/lib/sonoma/stream';
 import SonomaComposer from './Composer';
 import { SonomaUserMessage, SonomaAssistantMessage, type SonomaActivity } from './Message';
 
@@ -105,7 +105,11 @@ export default function DevChatShell() {
             if (m.id !== assistantId) return m;
             return { ...m, activity: m.activity.map((a) => a.id === activityId ? { ...a, status: 'running' } : a) };
         }));
-        runBash(command).then((output) => {
+        runBash(command, (partial) => {
+            setMessages((prev) => prev.map((m) =>
+                m.id === assistantId ? { ...m, activity: updateBashActivity(m.activity, activityId, partial) } : m,
+            ));
+        }).then((output) => {
             setMessages((prev) => prev.map((m) =>
                 m.id === assistantId ? { ...m, activity: finishBashActivity(m.activity, activityId, output) } : m,
             ));

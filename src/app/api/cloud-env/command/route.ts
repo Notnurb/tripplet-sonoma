@@ -4,6 +4,7 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { auth } from '@/lib/auth/session';
 import { workspaceDirFor } from '@/lib/cloud-env/workspace';
+import { rateLimitResponse, getRateLimitToken, LIMITS, cloudCommandLimiter } from '@/lib/security/rate-limit';
 
 export const runtime = 'nodejs';
 const MAX_SYNCED_FILE_BYTES = 1024 * 1024;
@@ -240,12 +241,28 @@ const SENSITIVE_ENV_KEYS = new Set([
     'ELEVENLABS_API_KEY', 'RESEND_API_KEY', 'STRIPE_API_KEY',
     'SENDGRID_API_KEY', 'TWILIO_API_KEY', 'SLACK_API_KEY',
     'GITHUB_TOKEN', 'NPM_TOKEN', 'AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY',
+    'ADMIN_USER_IDS', 'OPENSONOMA_RELAY_URL',
 ]);
+
+// An exact-name list inevitably misses a credential (REDIS_PASSWORD,
+// COMPOSIO_API_KEY, TELEGRAM_BOT_TOKEN, X402_*, BETTER_AUTH_SECRET, …), so the
+// blocklist is ALSO applied by suffix. A var that carries one of these markers
+// is a credential by definition — the exceptions that must survive (PATH, HOME,
+// etc.) are set explicitly by the caller and never read back from process.env.
+const SENSITIVE_ENV_SUFFIXES = [
+    'KEY', 'SECRET', 'TOKEN', 'PASSWORD', 'PASS', 'CREDENTIAL', 'SIGNING',
+];
+
+function isSensitiveEnvVar(key: string): boolean {
+    if (SENSITIVE_ENV_KEYS.has(key)) return true;
+    const upper = key.toUpperCase();
+    return SENSITIVE_ENV_SUFFIXES.some((suffix) => upper.endsWith(suffix));
+}
 
 function stripSensitiveEnv(env: NodeJS.ProcessEnv): Record<string, string | undefined> {
     const safe: Record<string, string | undefined> = { NODE_ENV: env.NODE_ENV };
     for (const [key, value] of Object.entries(env)) {
-        if (value !== undefined && !SENSITIVE_ENV_KEYS.has(key)) {
+        if (value !== undefined && !isSensitiveEnvVar(key)) {
             safe[key] = value;
         }
     }
@@ -455,15 +472,18 @@ async function resolveCommand(workspaceDir: string, commandName: string): Promis
         return null;
     }
 
-    // Allowlist for system commands resolved via PATH
+    // Allowlist for system commands resolved via PATH. Only read-only-ish
+    // filesystem/introspection tools belong here. Arbitrary-code and
+    // exfiltration-capable tools (interpreters, compilers, package managers,
+    // git, shells) are deliberately absent: `python`/`python3`/`pip`/`pip3`
+    // resolve to the user's venv above, and everything else must be something
+    // the user actually installed into that venv.
     const ALLOWED_SYSTEM_COMMANDS = new Set([
         'ls', 'cat', 'echo', 'pwd', 'mkdir', 'rm', 'cp', 'mv', 'touch',
         'chmod', 'head', 'tail', 'sort', 'grep', 'wc', 'find', 'diff',
         'which', 'ping', 'true', 'false', 'sleep', 'uname', 'date',
-        'python3', 'pip3', 'node', 'npm', 'npx', 'make', 'gcc', 'g++',
-        'clang', 'rustc', 'cargo', 'go', 'git',
         'less', 'more', 'printf', 'tee', 'cut', 'tr', 'uniq', 'comm',
-        'basename', 'dirname', 'realpath', 'readlink', 'xargs',
+        'basename', 'dirname', 'realpath', 'readlink',
     ]);
 
     // If not found in venv, try system PATH (only for allowed commands)
@@ -499,6 +519,13 @@ export async function POST(req: NextRequest) {
         const { userId } = await auth();
         if (!userId) {
             return NextResponse.json({ error: 'Sign in required for the real cloud Python environment.' }, { status: 401 });
+        }
+
+        const token = getRateLimitToken(req, userId);
+        try {
+            await cloudCommandLimiter.check(LIMITS.cloudCommand, token);
+        } catch {
+            return rateLimitResponse();
         }
 
         const body = (await req.json()) as CommandRequest;

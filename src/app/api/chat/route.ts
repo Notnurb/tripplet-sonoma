@@ -72,7 +72,7 @@ export async function POST(request: NextRequest) {
 
         // Unauthenticated access control
         if (!userId) {
-            if (model !== 'suzhou-3') {
+            if (model !== 'suzhou4') {
                 return new Response(
                     JSON.stringify({ error: 'Login required to use this model. Only Suzhou 4 is available for guests.' }),
                     { status: 403, headers: { 'Content-Type': 'application/json' } }
@@ -92,7 +92,7 @@ export async function POST(request: NextRequest) {
                 // real failure and render a sign-up path instead of an error state.
                 return new Response(
                     JSON.stringify({
-                        error: "You've used all 15 free messages — create a free account (it takes a few seconds) to keep going right where you left off.",
+                        error: "You've used all 15 free messages, create a free account (it takes a few seconds) to keep going right where you left off.",
                         code: 'guest_limit',
                     }),
                     { status: 403, headers: { 'Content-Type': 'application/json' } }
@@ -111,7 +111,7 @@ export async function POST(request: NextRequest) {
             usageRecordId = await recordUsage({
                 userId,
                 conversationId: conversationId || null,
-                model: model || 'tura-3',
+                model: model || 'taipei4',
                 promptChars: (messages || []).reduce((n, m) => n + m.content.length, 0),
             });
         }
@@ -162,7 +162,7 @@ export async function POST(request: NextRequest) {
                             conversationId,
                             userId,
                             encryptText(messages?.[messages.length - 1]?.content.slice(0, 30) || 'New Chat'),
-                            model || 'tura-3',
+                            model || 'taipei4',
                         ],
                     );
                 } else {
@@ -224,7 +224,7 @@ export async function POST(request: NextRequest) {
         const allowedOverride = userId ? systemPromptOverride : undefined;
 
         let systemPrompt = allowedOverride ?? getSystemPrompt({
-            modelId: model || 'tura-3',
+            modelId: model || 'taipei4',
             tone: effectiveTone as ToneType | null,
             activeModes: effectiveModes,
             anuraActive: anura || false,
@@ -345,19 +345,19 @@ Rules:
                     }
 
                     // Token budget rules:
-                    //  - Taipei (tura-3): NEVER cap. Unlimited thinking budget — the
+                    //  - Taipei (taipei4): NEVER cap. Unlimited thinking budget — the
                     //    model self-scales reasoning length based on the complexity
                     //    instruction injected in the system prompt. Mode caps (like
                     //    deep-research's 8192) are also ignored here so Taipei can
                     //    keep going on heavy builds.
-                    //  - Majuli (majuli-3): default-cap at 2048 for concise replies
+                    //  - Majuli (majuli4): default-cap at 2048 for concise replies
                     //    unless a mode explicitly overrides.
                     //  - Suzhou + everything else: honor mode caps; otherwise no cap.
-                    const isTaipei = model === 'tura-3';
+                    const isTaipei = model === 'taipei4';
                     const effectiveMaxTokens = isTaipei
                         ? undefined
                         : (modeSettings.maxTokens
-                            ?? ((model === 'majuli-3') ? 2048 : undefined));
+                            ?? ((model === 'majuli4') ? 2048 : undefined));
 
                     const conversationMessages: ProviderChatMessage[] = [...apiMessages];
 
@@ -366,7 +366,7 @@ Rules:
 
                         for await (const event of streamChatEvents({
                             messages: conversationMessages,
-                            modelId: model || 'tura-3',
+                            modelId: model || 'taipei4',
                             temperature: modeSettings.temperature,
                             maxTokens: effectiveMaxTokens,
                             tools: userId
@@ -594,7 +594,8 @@ Rules:
                     }
                 } catch (error: unknown) {
                     const message = error instanceof Error ? error.message : 'Stream error';
-                    const errData = `data: ${JSON.stringify({ error: message })}\n\n`;
+                    const code = (error as { code?: string } | null)?.code;
+                    const errData = `data: ${JSON.stringify(code ? { error: message, code } : { error: message })}\n\n`;
                     try {
                         controller.enqueue(encoder.encode(errData));
                     } catch {
