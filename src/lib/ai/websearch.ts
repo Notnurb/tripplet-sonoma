@@ -299,8 +299,6 @@ export async function fetchPinnedPage(
     const addresses = await resolvePublicAddresses(target);
     const connectAddress = addresses[0];
     const isTls = target.protocol === 'https:';
-    const requestFn = isTls ? httpsRequest : httpRequest;
-
     const baseOptions: RequestOptions = {
         host: connectAddress.address,
         port: target.port ? Number(target.port) : isTls ? 443 : 80,
@@ -313,7 +311,11 @@ export async function fetchPinnedPage(
         timeout: opts.timeoutMs ?? 10_000,
     };
 
-    const handleResponse = (res: IncomingMessage, req: ReturnType<typeof httpsRequest>): void => {
+    const handleResponse = (
+        res: IncomingMessage,
+        req: ReturnType<typeof httpsRequest>,
+        resolve: (page: PinnedPage) => void,
+    ): void => {
         let body = '';
         let bytes = 0;
         res.on('data', (chunk: Buffer | string) => {
@@ -335,10 +337,10 @@ export async function fetchPinnedPage(
         if (isTls) {
             req = httpsRequest(
                 { ...baseOptions, servername: target.hostname, rejectUnauthorized: true },
-                (res) => handleResponse(res, req),
+                (res) => handleResponse(res, req, resolve),
             );
         } else {
-            req = httpRequest(baseOptions as RequestOptions, (res) => handleResponse(res, req));
+            req = httpRequest(baseOptions as RequestOptions, (res) => handleResponse(res, req, resolve));
         }
         req.on('error', reject);
         req.on('timeout', () => req.destroy(new Error('Request timed out.')));
