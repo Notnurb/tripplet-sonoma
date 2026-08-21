@@ -7,7 +7,15 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { memo, useMemo, useState } from 'react';
 import { HugeiconsIcon } from '@hugeicons/react';
-import { ArrowDown01Icon, Tick02Icon } from '@hugeicons/core-free-icons';
+import {
+    ArrowDown01Icon,
+    Tick02Icon,
+    ZapIcon,
+    SpaceshipIcon,
+    BulbIcon,
+    Rocket01Icon,
+    HammerIcon,
+} from '@hugeicons/core-free-icons';
 import { cn } from '@/lib/utils';
 import { MODELS, Model } from '@/lib/ai/models';
 import { useAuth } from '@/context/AuthContext';
@@ -16,9 +24,17 @@ import { LockIcon } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 const MODEL_META: Record<string, { bestFor: string; speed: number; depth: number }> = {
-    'taipei4':    { bestFor: 'Hard problems, deep research', speed: 2, depth: 5 },
-    'majuli4':  { bestFor: 'Quick answers, fast Q&A',      speed: 5, depth: 3 },
-    'suzhou4':  { bestFor: 'Stories, brainstorming, creative', speed: 4, depth: 4 },
+    'taipei4':    { bestFor: 'Thinks Harder - Sonoma 4', speed: 2, depth: 5 },
+    'majuli4':  { bestFor: 'Fast Response - Sonoma 4',      speed: 5, depth: 3 },
+    'suzhou4':  { bestFor: 'Pick Between Expert and Fast', speed: 4, depth: 4 },
+};
+
+const MODEL_ICONS: Record<string, typeof ZapIcon> = {
+    'majuli4': ZapIcon,
+    'suzhou4': SpaceshipIcon,
+    'taipei4': BulbIcon,
+    'astro-5': Rocket01Icon,
+    'astro-5-code': HammerIcon,
 };
 
 function ModelBar({ value, max = 5, color }: { value: number; max?: number; color: string }) {
@@ -76,7 +92,7 @@ function ModelSelector({
     return (
         <DropdownMenu open={isOpen} onOpenChange={setIsOpen}>
             <DropdownMenuTrigger className={cn(
-                'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-200',
+                'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-200',
                 'border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70 focus-visible:ring-offset-2 focus-visible:ring-offset-background',
                 'cursor-pointer hover:scale-[1.02] active:scale-[0.98]',
                 isOpen
@@ -99,12 +115,13 @@ function ModelSelector({
                     </motion.div>
                 </motion.div>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="w-[260px] p-1.5">
+            <DropdownMenuContent align="start" className="w-[260px] p-1.5 rounded-3xl">
                 <div className="px-2 py-1 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">{dropdownTitle}</div>
                 {options.map((model) => {
                     const isTaipei = model.id === 'taipei4';
                     const isLocked = isTaipei && isLoaded && !isSignedIn;
                     const meta = MODEL_META[model.id];
+                    const icon = MODEL_ICONS[model.id];
                     const isSelected = selectedModelId === model.id;
 
                     return (
@@ -118,13 +135,22 @@ function ModelSelector({
                                 disabled={isLocked}
                                 onClick={() => !isLocked && onSelectModel(model.id)}
                                 className={cn(
-                                    "flex items-center justify-between cursor-pointer rounded-lg px-2 py-1.5 transition-all duration-200",
+                                    "flex items-center justify-between cursor-pointer rounded-2xl px-2.5 py-2 transition-all duration-200",
                                     isSelected && "bg-muted/70",
                                     !isSelected && !isLocked && "hover:bg-muted/50",
                                     isLocked && "opacity-60 cursor-default"
                                 )}
                             >
-                            <div className="flex flex-col gap-0.5 min-w-0 flex-1">
+                            <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                                {icon && (
+                                    <span className={cn(
+                                        "flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors",
+                                        isSelected ? "bg-foreground/10 text-foreground" : "bg-muted text-muted-foreground"
+                                    )}>
+                                        <HugeiconsIcon icon={icon} size={16} />
+                                    </span>
+                                )}
+                                <div className="flex flex-col gap-0.5 min-w-0 flex-1">
                                 <div className="flex items-center gap-1.5">
                                     <span className="text-sm font-medium">{model.name}</span>
                                     {isLocked && <LockIcon className="w-3 h-3 text-muted-foreground shrink-0" />}
@@ -153,6 +179,7 @@ function ModelSelector({
                                     </div>
                                 )}
                             </div>
+                            </div>
                             {isSelected && (
                                 <motion.div
                                     initial={{ scale: 0.8 }}
@@ -172,7 +199,7 @@ function ModelSelector({
                         <motion.div
                             whileHover={{ scale: 1.01 }}
                             whileTap={{ scale: 0.99 }}
-                            className="flex items-center justify-between px-2 py-1.5 select-none cursor-pointer hover:bg-muted/50 rounded-lg transition-colors"
+                            className="flex items-center justify-between px-2.5 py-1.5 select-none cursor-pointer hover:bg-muted/50 rounded-2xl transition-colors"
                             onClick={(e) => {
                                 e.preventDefault();
                                 e.stopPropagation();
@@ -183,7 +210,7 @@ function ModelSelector({
                                 <span className="text-xs font-medium">Expand thought process</span>
                                 <p className="text-[9px] text-muted-foreground">
                                     {isTaipei
-                                        ? 'Unlimited reasoning. Taipei thinks longer on harder asks.'
+                                        ? 'Unlimited reasoning. Expert thinks longer on harder asks.'
                                         : 'Deeper reasoning, slower responses.'}
                                 </p>
                             </div>
@@ -210,7 +237,7 @@ function ModelSelector({
                             <motion.div
                                 whileHover={{ scale: 1.01 }}
                                 whileTap={{ scale: 0.99 }}
-                                className="flex items-center justify-between px-2 py-1.5 select-none cursor-pointer hover:bg-muted/50 rounded-lg transition-colors"
+                                className="flex items-center justify-between px-2.5 py-1.5 select-none cursor-pointer hover:bg-muted/50 rounded-2xl transition-colors"
                                 onClick={(e) => {
                                     e.preventDefault();
                                     e.stopPropagation();

@@ -16,24 +16,24 @@ export const DEEP_CODE_PERSONA = 'astro-5-code';
 
 const BASE_MODELS: Model[] = [
     {
-        id: 'astro-5',
-        name: 'Astro 5',
-        description: 'Flagship — top reasoning and range',
-    },
-    {
-        id: 'taipei4',
-        name: 'Taipei 4',
-        description: 'Advanced reasoning and analysis',
-    },
-    {
         id: 'majuli4',
-        name: 'Majuli 4',
-        description: 'Fast and concise responses',
+        name: 'Fast',
+        description: 'Fast Response - Sonoma 4',
     },
     {
         id: 'suzhou4',
-        name: 'Suzhou 4',
-        description: 'Creative and detailed generation',
+        name: 'Auto',
+        description: 'Pick Between Expert and Fast',
+    },
+    {
+        id: 'taipei4',
+        name: 'Expert',
+        description: 'Thinks Harder - Sonoma 4',
+    },
+    {
+        id: 'astro-5',
+        name: 'Max',
+        description: 'Deep Reasoning + Subagents - Astro 5.1',
     },
 ];
 
@@ -67,8 +67,8 @@ export const LEGACY_MODELS: Model[] = [
 // power it are resolved server-side and never shown in the UI.
 export const DEEP_CODE_FLAGSHIP: Model = {
     id: DEEP_CODE_PERSONA,
-    name: 'Astro 5 Code',
-    description: 'Deepest coding — thinks it through, then builds',
+    name: 'Build',
+    description: 'Best for Coding - Astro 5 Code',
 };
 
 // Custom models declared in src/config.md (entries with `show in picker: yes`).
@@ -103,6 +103,7 @@ const WORKSPACE_MODEL_IDS = ['astro-5', 'taipei4', 'majuli4', 'suzhou4'];
 
 const WORKSPACE_BASE: Model[] = [
     ...BASE_MODELS.filter((m) => WORKSPACE_MODEL_IDS.includes(m.id)),
+    DEEP_CODE_FLAGSHIP,
     ...CUSTOM_MODELS,
 ];
 

@@ -11,7 +11,6 @@ import {
     type DeepCodeReasoningLevel,
 } from '@/lib/sonoma/reasoning-levels';
 import {
-    SonomaClip,
     SonomaSend,
     SonomaStop,
     SonomaChevron,
@@ -21,6 +20,23 @@ import {
     SonomaFile,
     SonomaX,
 } from './icons';
+import { HugeiconsIcon } from '@hugeicons/react';
+import {
+    ZapIcon,
+    SpaceshipIcon,
+    BulbIcon,
+    Rocket01Icon,
+    HammerIcon,
+    ArrowRight01Icon,
+} from '@hugeicons/core-free-icons';
+
+const MODEL_ICONS: Record<string, typeof ZapIcon> = {
+    'majuli4': ZapIcon,
+    'suzhou4': SpaceshipIcon,
+    'taipei4': BulbIcon,
+    'astro-5': Rocket01Icon,
+    'astro-5-code': HammerIcon,
+};
 
 interface UploadedFile {
     id: string;
@@ -344,7 +360,7 @@ export function ModelMenu({
         width: 'min(268px, calc(100vw - 32px))',
         background: 'var(--sonoma-surface)',
         border: '1px solid var(--sonoma-border)',
-        borderRadius: 14,
+        borderRadius: 18,
         boxShadow: 'var(--sonoma-shadow-lg)',
     };
 
@@ -363,6 +379,7 @@ export function ModelMenu({
                 <div role="menu" className="absolute z-30 p-1.5" style={menuStyle}>
                     {models.map((m) => {
                         const sel = m.id === value;
+                        const icon = MODEL_ICONS[m.id];
                         return (
                             <button
                                 key={m.id}
@@ -370,9 +387,18 @@ export function ModelMenu({
                                     onChange(m.id);
                                     setOpen(false);
                                 }}
-                                className="flex w-full items-start gap-2.5 rounded-[10px] px-2.5 py-2.5 text-left"
+                                className="flex w-full items-center gap-2 rounded-[14px] px-2 py-1.5 text-left"
                                 style={{ background: sel ? 'var(--sonoma-surface)' : 'transparent' }}
                             >
+                                {icon && (
+                                    <HugeiconsIcon
+                                        icon={icon}
+                                        size={15}
+                                        style={{
+                                            color: sel ? 'var(--sonoma-accent-2)' : 'var(--sonoma-ink-2)',
+                                        }}
+                                    />
+                                )}
                                 <div className="min-w-0 flex-1">
                                     <div
                                         className="text-[13.5px] font-medium"
@@ -382,7 +408,7 @@ export function ModelMenu({
                                     </div>
                                     {m.description && (
                                         <div
-                                            className="mt-0.5 text-[12px] leading-[1.4]"
+                                            className="mt-0 text-[12px] leading-[1.4]"
                                             style={{ color: 'var(--sonoma-muted)' }}
                                         >
                                             {m.description}
@@ -484,8 +510,6 @@ export default function SonomaComposer({
     onToggleBrowse,
     reason,
     onToggleReason,
-    code,
-    onToggleCode,
     deepCode,
     onToggleDeepCode,
     deepCodeLevel,
@@ -518,6 +542,9 @@ export default function SonomaComposer({
     const [mentionQuery, setMentionQuery] = useState<string | null>(null);
     const [mentionStart, setMentionStart] = useState(0);
     const [mentionIndex, setMentionIndex] = useState(0);
+    // Collapsed toolbar: all tool buttons tuck behind the arrow toggle and
+    // slide out beside it when open.
+    const [toolsOpen, setToolsOpen] = useState(false);
 
     const mentionMatches = useMemo(() => {
         if (mentionQuery === null) return [];
@@ -790,87 +817,98 @@ export default function SonomaComposer({
                 </div>
             )}
             <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                {/* Toolbar toggle — replaces the paperclip. Click to slide the
+                    tool buttons out beside it; the arrow flips to point left. */}
+                <button
+                    type="button"
+                    title={toolsOpen ? 'Hide tools' : 'Show tools'}
+                    onClick={() => setToolsOpen((o) => !o)}
+                    aria-expanded={toolsOpen}
+                    className={cn(
+                        'inline-flex h-8 w-8 max-md:h-9 max-md:w-9 items-center justify-center rounded-full transition-colors',
+                    )}
+                    style={{
+                        border: '1px solid var(--sonoma-border)',
+                        color: toolsOpen ? 'var(--sonoma-accent-2)' : 'var(--sonoma-ink-2)',
+                        background: 'var(--sonoma-surface)',
+                        boxShadow: 'var(--sonoma-shadow-sm)',
+                    }}
+                    onMouseEnter={(e) => {
+                        e.currentTarget.style.background = 'var(--sonoma-surface-2)';
+                        e.currentTarget.style.borderColor = 'var(--sonoma-border-2)';
+                    }}
+                    onMouseLeave={(e) => {
+                        e.currentTarget.style.background = 'var(--sonoma-surface)';
+                        e.currentTarget.style.borderColor = 'var(--sonoma-border)';
+                    }}
+                >
+                    <span
+                        className="inline-flex"
+                        style={{
+                            transform: toolsOpen ? 'rotate(180deg)' : 'rotate(0deg)',
+                            transition: 'transform 0.35s ease-in-out',
+                        }}
+                    >
+                        <HugeiconsIcon icon={ArrowRight01Icon} size={16} />
+                    </span>
+                </button>
+
                 {attachments && (
-                    <>
-                        <input
-                            ref={fileRef}
-                            type="file"
-                            multiple
-                            accept="image/*"
-                            className="hidden"
-                            onChange={onPick}
-                        />
-                        <button
-                            type="button"
-                            title="Attach files"
-                            onClick={() => fileRef.current?.click()}
-                            className={cn(
-                                'inline-flex h-8 w-8 max-md:h-9 max-md:w-9 items-center justify-center rounded-full transition-colors',
-                            )}
-                            style={{
-                                border: '1px solid var(--sonoma-border)',
-                                color: 'var(--sonoma-ink-2)',
-                                background: 'var(--sonoma-surface)',
-                                boxShadow: 'var(--sonoma-shadow-sm)',
-                            }}
-                            onMouseEnter={(e) => {
-                                e.currentTarget.style.background = 'var(--sonoma-surface-2)';
-                                e.currentTarget.style.borderColor = 'var(--sonoma-border-2)';
-                            }}
-                            onMouseLeave={(e) => {
-                                e.currentTarget.style.background = 'var(--sonoma-surface)';
-                                e.currentTarget.style.borderColor = 'var(--sonoma-border)';
-                            }}
-                        >
-                            <SonomaClip />
-                        </button>
-                    </>
+                    <input
+                        ref={fileRef}
+                        type="file"
+                        multiple
+                        accept="image/*"
+                        className="hidden"
+                        onChange={onPick}
+                    />
                 )}
 
-                {onToggleBrowse && (
-                    <ToolChip
-                        active={!!browse}
-                        onClick={onToggleBrowse}
-                        icon={<SonomaBrowse />}
-                        label="Browse"
-                        compact={isMobile || buildWorkspace}
-                    />
-                )}
-                {onToggleReason && !buildWorkspace && (
-                    <ToolChip
-                        active={!!reason}
-                        onClick={onToggleReason}
-                        icon={<SonomaReason />}
-                        label="Reason"
-                        compact={isMobile || buildWorkspace}
-                    />
-                )}
-                {onToggleCode && (
-                    <ToolChip
-                        active={!!code}
-                        onClick={onToggleCode}
-                        icon={<SonomaCode size={16} />}
-                        label="Code"
-                        compact={isMobile || buildWorkspace}
-                    />
-                )}
-                {onToggleDeepCode && (
-                    <DeepCodeChip
-                        active={!!deepCode}
-                        onClick={onToggleDeepCode}
-                        level={deepCodeLevel ?? 'high'}
-                        onLevelChange={onDeepCodeLevelChange ?? (() => {})}
-                        compact={isMobile || buildWorkspace}
-                    />
-                )}
-                {buildWorkspace ? <BuildPlanChip /> : connectors && <ConnectorsMenu compact={isMobile} />}
+                {/* Tool buttons — slide out next to the arrow when open.
+                    overflow-visible once expanded so popovers (Apps, DeepCode) can
+                    open upward without being clipped. */}
+                <div
+                    className={cn(
+                        'flex min-w-0 items-center gap-2 transition-all duration-300 ease-in-out',
+                        toolsOpen
+                            ? 'max-w-full translate-x-0 opacity-100 overflow-visible'
+                            : 'max-w-0 -translate-x-3 opacity-0 overflow-hidden',
+                    )}
+                >
+                    {onToggleBrowse && (
+                        <ToolChip
+                            active={!!browse}
+                            onClick={onToggleBrowse}
+                            icon={<SonomaBrowse />}
+                            label="Browse"
+                            compact={isMobile || buildWorkspace}
+                        />
+                    )}
+                    {onToggleReason && !buildWorkspace && (
+                        <ToolChip
+                            active={!!reason}
+                            onClick={onToggleReason}
+                            icon={<SonomaReason />}
+                            label="Reason"
+                            compact={isMobile || buildWorkspace}
+                        />
+                    )}
+                    {onToggleDeepCode && (
+                        <DeepCodeChip
+                            active={!!deepCode}
+                            onClick={onToggleDeepCode}
+                            level={deepCodeLevel ?? 'high'}
+                            onLevelChange={onDeepCodeLevelChange ?? (() => {})}
+                            compact={isMobile || buildWorkspace}
+                        />
+                    )}
+                    {buildWorkspace ? <BuildPlanChip /> : connectors && <ConnectorsMenu compact={isMobile} />}
+                </div>
 
                 <div className="min-w-0 flex-1" />
 
-                {/* On mobile the model picker lives in the top bar (see ChatShell). */}
-                {!isMobile && (
-                    <ModelMenu value={model} onChange={onModelChange} models={modelList} />
-                )}
+                {/* Model picker — always visible (mobile keeps it in the top bar). */}
+                {!isMobile && <ModelMenu value={model} onChange={onModelChange} models={modelList} />}
 
                 <button
                     type="button"

@@ -68,7 +68,7 @@ describe('custom models from src/config.md', () => {
         vi.stubEnv('NEXT_PUBLIC_CUSTOM_MODELS', JSON.stringify([{ id: 'astro-5', name: 'Impostor' }]));
         const shadowed = await import('@/lib/ai/models');
         expect(shadowed.MODELS.filter((x) => x.id === 'astro-5')).toHaveLength(1);
-        expect(shadowed.getModel('astro-5').name).toBe('Astro 5');
+        expect(shadowed.getModel('astro-5').name).toBe('Max');
 
         vi.resetModules();
         vi.stubEnv('NEXT_PUBLIC_CUSTOM_MODELS', 'not json at all {');
