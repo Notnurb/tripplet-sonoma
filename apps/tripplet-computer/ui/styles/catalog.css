@@ -1,0 +1,408 @@
+/* Plugins and Skills — the two catalogue pages behind the toolbar segments. */
+
+.cat-title {
+    margin: 0;
+    font-size: 34px;
+    font-weight: 400;
+    letter-spacing: -0.5px;
+    color: var(--ink);
+}
+
+.cat-sub {
+    margin: 6px 0 22px;
+    font-size: 16px;
+    color: var(--ink-dim);
+}
+
+.cat-search {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    height: 42px;
+    padding: 0 15px;
+    border-radius: var(--radius-pill);
+    background: var(--bg-input);
+    color: var(--ink-faint);
+    margin-bottom: 6px;
+}
+
+.cat-search input {
+    flex: 1 1 auto;
+    font-size: 14.5px;
+    color: var(--ink);
+    user-select: text;
+    cursor: text;
+}
+
+.cat-search input::placeholder {
+    color: var(--ink-faint);
+}
+
+/* ── Section headings ── */
+
+.section {
+    margin-top: 30px;
+}
+
+.section-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding-bottom: 9px;
+    border-bottom: 1px solid var(--line);
+}
+
+.section-head h2 {
+    margin: 0;
+    font-size: 16.5px;
+    font-weight: 400;
+    color: var(--ink);
+}
+
+/* The pill-backed variant (the "System" heading in the Skills screenshot). */
+.section-head h2.pill {
+    background: var(--bg-input);
+    padding: 5px 13px;
+    border-radius: var(--radius-sm);
+    font-size: 15px;
+}
+
+.section-head .tools {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    color: var(--ink-dim);
+}
+
+.section-head .tools button {
+    width: 28px;
+    height: 26px;
+    display: grid;
+    place-items: center;
+    border-radius: 6px;
+}
+
+.section-head .tools button:hover {
+    background: var(--bg-hover);
+    color: var(--ink);
+}
+
+/* ── Two-column item grid ── */
+
+.grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 2px 26px;
+    padding-top: 8px;
+}
+
+@media (max-width: 660px) {
+    .grid {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
+.item {
+    display: flex;
+    align-items: center;
+    gap: 13px;
+    padding: 9px 8px;
+    margin: 0 -8px;
+    border-radius: 10px;
+    min-width: 0;
+    text-align: left;
+    width: calc(100% + 16px);
+}
+
+.item:hover {
+    background: var(--bg-raised);
+}
+
+.item .art {
+    width: 44px;
+    height: 44px;
+    flex: 0 0 auto;
+    border-radius: 10px;
+    overflow: hidden;
+    display: grid;
+    place-items: center;
+    background: var(--bg-input);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+}
+
+.item .art img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+/* Fallback tile: the app's first letter over a colour derived from its slug. */
+.item .art .letter {
+    font-size: 18px;
+    font-weight: 600;
+    color: #fff;
+    width: 100%;
+    height: 100%;
+    display: grid;
+    place-items: center;
+}
+
+.item .text {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.item .name {
+    font-size: 15px;
+    color: var(--ink);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.item .desc {
+    font-size: 13.5px;
+    color: var(--ink-dim);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.item .end {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--ink-faint);
+}
+
+/* Install / More controls, revealed or emphasised on hover. */
+.item .install {
+    height: 28px;
+    padding: 0 13px;
+    border-radius: var(--radius-sm);
+    background: var(--bg-active);
+    color: var(--ink);
+    font-size: 13.5px;
+}
+
+.item .install:hover {
+    background: #4a4a4c;
+}
+
+.item .more {
+    width: 26px;
+    height: 26px;
+    display: grid;
+    place-items: center;
+    border-radius: 6px;
+    color: var(--ink-faint);
+}
+
+.item .more:hover {
+    background: var(--bg-active);
+    color: var(--ink);
+}
+
+.item .check {
+    color: var(--ink-faint);
+}
+
+.item .spinner {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    border: 2px solid rgba(255, 255, 255, 0.18);
+    border-top-color: var(--ink-dim);
+    animation: spin 700ms linear infinite;
+}
+
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+/* ── Installed icon row (Plugins page) ── */
+
+.installed-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    padding: 16px 0 4px;
+}
+
+.installed-row .tile {
+    width: 44px;
+    height: 44px;
+    border-radius: 10px;
+    overflow: hidden;
+    display: grid;
+    place-items: center;
+    background: var(--bg-input);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+    position: relative;
+}
+
+.installed-row .tile img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.installed-row .tile:hover {
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.2);
+}
+
+.installed-row .tile.off {
+    opacity: 0.4;
+}
+
+/* ── Public | Personal filter row ── */
+
+.filter-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 18px 0 2px;
+}
+
+.filter-row .segmented button {
+    height: 30px;
+    padding: 0 14px;
+    font-size: 14px;
+}
+
+/* ── Empty / notice states ── */
+
+.notice {
+    border: 1px solid var(--line);
+    border-radius: var(--radius-md);
+    padding: 16px 18px;
+    color: var(--ink-dim);
+    font-size: 13.5px;
+    margin-top: 18px;
+    background: rgba(255, 255, 255, 0.015);
+}
+
+.notice strong {
+    color: var(--ink);
+    font-weight: 500;
+}
+
+.notice .row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 12px;
+}
+
+.notice input {
+    flex: 1 1 auto;
+    height: 34px;
+    padding: 0 12px;
+    border-radius: var(--radius-sm);
+    background: var(--bg-input);
+    color: var(--ink);
+    font-size: 13.5px;
+    user-select: text;
+    cursor: text;
+    font-family: var(--font-mono);
+}
+
+.cat-empty {
+    padding: 46px 0;
+    text-align: center;
+    color: var(--ink-faint);
+    font-size: 14px;
+}
+
+/* ── Settings ── */
+
+.settings-group {
+    margin-top: 26px;
+}
+
+.settings-group h2 {
+    margin: 0 0 10px;
+    font-size: 16.5px;
+    font-weight: 400;
+}
+
+.field {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 11px 0;
+    border-bottom: 1px solid var(--line);
+}
+
+.field:last-child {
+    border-bottom: 0;
+}
+
+.field .label {
+    font-size: 14px;
+}
+
+.field .hint {
+    font-size: 12.5px;
+    color: var(--ink-dim);
+    margin-top: 2px;
+    max-width: 380px;
+}
+
+.field .control {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.field input[type='text'],
+.field input[type='password'] {
+    width: 260px;
+    height: 32px;
+    padding: 0 11px;
+    border-radius: var(--radius-sm);
+    background: var(--bg-input);
+    color: var(--ink);
+    font-size: 13px;
+    font-family: var(--font-mono);
+    user-select: text;
+    cursor: text;
+}
+
+/* iOS-style switch. */
+.switch {
+    width: 42px;
+    height: 25px;
+    border-radius: 999px;
+    background: #48484a;
+    position: relative;
+    transition: background 140ms ease;
+    flex: 0 0 auto;
+}
+
+.switch::after {
+    content: '';
+    position: absolute;
+    top: 2.5px;
+    left: 2.5px;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: #fff;
+    transition: transform 140ms ease;
+}
+
+.switch[aria-checked='true'] {
+    background: var(--accent);
+}
+
+.switch[aria-checked='true']::after {
+    transform: translateX(17px);
+}

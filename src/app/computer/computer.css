@@ -1,0 +1,166 @@
+/* Tripplet Computer landing page (/computer).
+   Route CSS lands in the global scope in Next, so every rule here is
+   namespaced to `.tc-root` and cannot restyle the rest of the app. No
+   `.tc-root *` reset: Tailwind preflight already handles that, and an
+   unlayered universal rule would outrank layered Tailwind utilities. */
+
+body:has(.tc-root) {
+    background: #08080a;
+    overflow-x: hidden;
+}
+
+.tc-root {
+    --violet: #8350e8;
+    --lilac: #b388ff;
+    overflow-x: hidden;
+    background: #08080a;
+    color: #ececec;
+}
+
+/* Ambient light behind the hero — two offset radial pools rather than one
+   symmetric glow, which reads as lighting instead of as a gradient. */
+.tc-root .tc-ambient {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background:
+        radial-gradient(60% 46% at 22% 8%, rgba(131, 80, 232, 0.24), transparent 68%),
+        radial-gradient(48% 40% at 82% 26%, rgba(179, 136, 255, 0.14), transparent 70%);
+}
+
+/* Faint grid, masked to fade out before it reaches the content. */
+.tc-root .tc-grid {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background-image:
+        linear-gradient(to right, rgba(255, 255, 255, 0.045) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(255, 255, 255, 0.045) 1px, transparent 1px);
+    background-size: 56px 56px;
+    -webkit-mask-image: radial-gradient(72% 58% at 50% 22%, #000 0%, transparent 78%);
+    mask-image: radial-gradient(72% 58% at 50% 22%, #000 0%, transparent 78%);
+}
+
+.tc-root .tc-glass {
+    background: rgba(255, 255, 255, 0.022);
+    border: 1px solid rgba(255, 255, 255, 0.075);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+}
+
+/* Hairline top highlight, the way a real glass edge catches light. */
+.tc-root .tc-glass-edge {
+    position: relative;
+}
+
+.tc-root .tc-glass-edge::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    padding: 1px;
+    background: linear-gradient(
+        180deg,
+        rgba(255, 255, 255, 0.28) 0%,
+        rgba(255, 255, 255, 0.04) 34%,
+        rgba(255, 255, 255, 0) 62%
+    );
+    -webkit-mask:
+        linear-gradient(#fff 0 0) content-box,
+        linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    pointer-events: none;
+}
+
+.tc-root .tc-gradient-text {
+    background: linear-gradient(96deg, #ffffff 8%, #cbb6ff 54%, var(--lilac) 96%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+}
+
+/* ── The app mock ── */
+
+.tc-root .tc-window {
+    background: #1b1b1d;
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    border-radius: 14px;
+    box-shadow:
+        0 46px 110px -30px rgba(0, 0, 0, 0.9),
+        0 0 0 1px rgba(255, 255, 255, 0.035),
+        0 0 90px -40px rgba(131, 80, 232, 0.55);
+    overflow: hidden;
+}
+
+.tc-root .tc-light {
+    width: 11px;
+    height: 11px;
+    border-radius: 50%;
+    display: inline-block;
+}
+
+.tc-root .tc-composer {
+    background: #232325;
+    border-radius: 16px;
+}
+
+.tc-root .tc-foot {
+    background: #232325;
+    border-radius: 11px;
+}
+
+.tc-root .tc-chip {
+    border-radius: 999px;
+    color: #a1a1a6;
+}
+
+.tc-root .tc-send {
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    background: #3a3a3c;
+    color: #a1a1a6;
+    display: grid;
+    place-items: center;
+}
+
+/* Subagent pips in the Ultra section. */
+.tc-root .tc-pip {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--lilac);
+    opacity: 0.35;
+    animation: tc-pulse 2.4s ease-in-out infinite;
+}
+
+@keyframes tc-pulse {
+    0%,
+    100% {
+        opacity: 0.28;
+        transform: scale(0.86);
+    }
+    50% {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+
+.tc-root .tc-rule {
+    height: 1px;
+    background: linear-gradient(
+        90deg,
+        transparent,
+        rgba(255, 255, 255, 0.11) 18%,
+        rgba(255, 255, 255, 0.11) 82%,
+        transparent
+    );
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .tc-root .tc-pip {
+        animation: none;
+        opacity: 0.7;
+    }
+}

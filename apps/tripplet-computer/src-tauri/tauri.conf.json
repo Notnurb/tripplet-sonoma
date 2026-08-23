@@ -1,0 +1,53 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Tripplet Computer",
+  "version": "0.1.0",
+  "identifier": "ai.tripplet.computer",
+  "build": {
+    "frontendDist": "../ui"
+  },
+  "app": {
+    "macOSPrivateApi": true,
+    "windows": [
+      {
+        "label": "main",
+        "title": "Tripplet Computer",
+        "width": 1180,
+        "height": 820,
+        "minWidth": 760,
+        "minHeight": 540,
+        "resizable": true,
+        "fullscreen": false,
+        "theme": "Dark",
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true,
+        "acceptFirstMouse": true,
+        "backgroundColor": "#1b1b1d"
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; font-src 'self'; script-src 'self'; connect-src 'self' ipc: http://ipc.localhost; object-src 'none'; base-uri 'none'; form-action 'none'"
+    },
+    "withGlobalTauri": true
+  },
+  "bundle": {
+    "active": true,
+    "targets": [
+      "app",
+      "dmg"
+    ],
+    "category": "DeveloperTool",
+    "copyright": "Tripplet",
+    "shortDescription": "A local agent workstation",
+    "longDescription": "Tripplet Computer runs Tripplet's agent models against a project folder on your Mac \u2014 reading and writing files, running commands behind an approval gate, browsing the web, and acting across your connected apps through Composio.",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns"
+    ],
+    "macOS": {
+      "minimumSystemVersion": "11.0"
+    }
+  }
+}

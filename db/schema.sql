@@ -199,3 +199,43 @@ create table if not exists x402_api_keys (
     created_at timestamptz not null default now(),
     last_used_at timestamptz
 );
+
+-- ── Tripplet Computer installs ──────────────────────────────────────────────
+-- One row per desktop install. The app generates an Ed25519 keypair on first
+-- run, registers the public half here, and signs every subsequent request with
+-- the private half — so there is no user-supplied API key anywhere in the
+-- desktop flow.
+--
+-- This identifies an INSTALL, not a person, and it is abuse control rather
+-- than authentication: the bootstrap secret that authorises registration ships
+-- inside a binary users hold, so a determined attacker can forge a
+-- registration. What it does buy is per-install rate limiting, revocation, and
+-- attribution — none of which a shared static key can offer.
+create table if not exists computer_installs (
+    id text primary key,                     -- ci_<uuid>, chosen by the client
+    public_key text not null,                -- base64 raw Ed25519 public key
+    token_hash text not null unique,         -- sha256 of the issued bearer token
+    app_version text not null default '',
+    platform text not null default '',
+    is_revoked boolean not null default false,
+    revoked_reason text,
+    -- Connector accounts are scoped to this id, replacing the per-user
+    -- Composio id the app used to keep in its own config.
+    composio_user_id text not null,
+    created_at timestamptz not null default now(),
+    last_seen_at timestamptz not null default now(),
+    request_count bigint not null default 0
+);
+
+create index if not exists computer_installs_seen_idx
+    on computer_installs (last_seen_at desc);
+
+-- Signed-request nonces, for replay rejection. Rows older than the clock-skew
+-- window are dead weight and are swept opportunistically on insert.
+create table if not exists computer_nonces (
+    nonce text primary key,
+    install_id text not null,
+    seen_at timestamptz not null default now()
+);
+
+create index if not exists computer_nonces_seen_idx on computer_nonces (seen_at);
