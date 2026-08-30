@@ -18,22 +18,22 @@ const BASE_MODELS: Model[] = [
     {
         id: 'majuli4',
         name: 'Fast',
-        description: 'Fast Response - Sonoma 4',
+        description: 'Fast Response - Astro 5.1',
     },
     {
         id: 'suzhou4',
         name: 'Auto',
-        description: 'Pick Between Expert and Fast',
+        description: 'Pick Between Expert and Fast - Taipei 4',
     },
     {
         id: 'taipei4',
         name: 'Expert',
-        description: 'Thinks Harder - Sonoma 4',
+        description: 'Thinks Harder - Majuli 4',
     },
     {
         id: 'astro-5',
         name: 'Max',
-        description: 'Deep Reasoning + Subagents - Astro 5.1',
+        description: 'Deep Reasoning + Subagents - Suzhou 4',
     },
 ];
 

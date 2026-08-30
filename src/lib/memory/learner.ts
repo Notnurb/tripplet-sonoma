@@ -135,6 +135,56 @@ function learnerTarget(): { url: string; apiKey: string; model: string } | null 
 }
 
 /**
+ * Run the extraction model over one exchange and return the candidate
+ * memories. Shared by the account-wide learner below and the project learner
+ * (src/lib/memory/project-learner.ts). Never throws — returns [] on any
+ * failure, so learning can't break chat.
+ */
+export async function extractMemories(params: {
+    userMessage: string;
+    assistantMessage: string;
+    known: string[];
+    systemPrompt?: string;
+}): Promise<ExtractedMemory[]> {
+    try {
+        const target = learnerTarget();
+        if (!target || !params.userMessage.trim()) return [];
+        const known =
+            params.known.slice(0, MAX_KNOWN_IN_PROMPT).map((c) => `- ${c}`).join('\n') || '(none yet)';
+
+        const res = await fetch(target.url, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${target.apiKey}`,
+            },
+            body: JSON.stringify({
+                model: target.model,
+                stream: false,
+                temperature: 0.1,
+                max_tokens: 300,
+                messages: [
+                    { role: 'system', content: params.systemPrompt ?? EXTRACTION_SYSTEM_PROMPT },
+                    {
+                        role: 'user',
+                        content:
+                            `KNOWN memories:\n${known}\n\n` +
+                            `USER said:\n${params.userMessage.slice(0, MAX_INPUT_CHARS)}\n\n` +
+                            `ASSISTANT replied:\n${params.assistantMessage.slice(0, MAX_INPUT_CHARS)}`,
+                    },
+                ],
+            }),
+            signal: AbortSignal.timeout(20_000),
+        });
+        if (!res.ok) return [];
+        const json = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> };
+        return parseExtraction(json.choices?.[0]?.message?.content ?? '');
+    } catch {
+        return [];
+    }
+}
+
+/**
  * Extract and persist memories from one finished exchange. Resolves to the
  * number of memories saved; never throws.
  */
