@@ -42,11 +42,8 @@ export interface UsageSummary {
  * metering about real subscriptions when payments exist.
  */
 export async function getUserPlan(userId: string): Promise<PlanId> {
-    const row = await prisma.user.findUnique({
-        where: { id: userId },
-        select: { plan: true },
-    });
-    if (row?.plan) return row.plan;
+    // No `plan` column exists on User yet; every account is free until billing lands.
+    void userId;
     return 'free';
 }
 
