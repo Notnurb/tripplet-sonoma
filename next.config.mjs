@@ -31,7 +31,7 @@ const nextConfig = {
   // Tree-shake large barrel-file packages so each route only ships the icons /
   // helpers it actually imports — meaningfully smaller client bundles.
   experimental: {
-    optimizePackageImports: ['lucide-react', '@tabler/icons-react', 'framer-motion'],
+    optimizePackageImports: ['lucide-react', '@tabler/icons-react', 'framer-motion', '@hugeicons/react', '@hugeicons/core-free-icons', '@radix-ui/react-icons', 'date-fns'],
   },
   // Bundle the installer script into the /installconnect route's serverless
   // function so readFileSync works on Vercel (public/ is CDN-served, not in the

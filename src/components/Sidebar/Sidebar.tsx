@@ -1,5 +1,6 @@
 'use client';
 
+import dynamic from 'next/dynamic';
 import { useCallback, useState, useEffect, useMemo } from 'react';
 import { loadSettings, SETTINGS_EVENT, SIDEBAR_WIDTHS } from '@/lib/settings';
 import { APP_NAME } from '@/lib/branding';
@@ -24,9 +25,15 @@ import { useCloudEnvironments } from '@/hooks/useCloudEnvironments';
 import { cn } from '@/lib/utils';
 import { Conversation } from '@/types';
 import { Button } from '@/components/ui/button';
-import { SettingsModal } from '@/components/ui/settings-modal';
 import { Logo } from '@/components/ui/logo';
 import { ProgressRing } from '@/components/ui/progress-ring';
+
+// Portal-rendered modal — keep its chunk (and framer-motion) out of the
+// initial page JS; it loads after hydration, before the user can open it.
+const SettingsModal = dynamic(
+    () => import('@/components/ui/settings-modal').then((m) => m.SettingsModal),
+    { ssr: false },
+);
 
 interface SidebarProps {
     isOpen: boolean;

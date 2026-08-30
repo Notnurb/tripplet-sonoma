@@ -16,6 +16,14 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { usePathname } from 'next/navigation';
 import { DEV_USER, isDevModeActive } from '@/lib/dev-mode';
+import {
+    SERVERLESS_EVENT,
+    clearServerlessData,
+    installServerlessFetch,
+    isServerlessMode,
+    serverlessStats,
+    setServerlessMode,
+} from '@/lib/dev/serverless';
 
 export function DevModePanel() {
     if (!isDevModeActive()) return null;
@@ -34,6 +42,30 @@ function DevModePanelInner() {
     const [shotStatus, setShotStatus] = useState<string | null>(null);
     const [viewport, setViewport] = useState('');
     const [outlines, setOutlines] = useState(false);
+
+    // Serverless mode — no DB, no data round-trips; state lives in this page.
+    const [serverless, setServerless] = useState(false);
+    const [serverlessCounts, setServerlessCounts] = useState({ conversations: 0, projects: 0, memories: 0 });
+
+    useEffect(() => {
+        // Installed once so the switch can flip mid-session without a reload;
+        // the patch is inert while serverless mode is off.
+        installServerlessFetch();
+        const sync = () => {
+            setServerless(isServerlessMode());
+            setServerlessCounts(serverlessStats());
+        };
+        sync();
+        window.addEventListener(SERVERLESS_EVENT, sync);
+        return () => window.removeEventListener(SERVERLESS_EVENT, sync);
+    }, []);
+
+    // Keep the counts honest while the panel is open.
+    useEffect(() => {
+        if (!open || !serverless) return;
+        const t = setInterval(() => setServerlessCounts(serverlessStats()), 1500);
+        return () => clearInterval(t);
+    }, [open, serverless]);
 
     // Blog composer state
     const [title, setTitle] = useState('');
@@ -226,6 +258,53 @@ function DevModePanelInner() {
             <p className="mt-1 font-mono text-[11px] text-muted-foreground">
                 {pathname} · {viewport}
             </p>
+
+            {/* Serverless mode */}
+            <div className="mt-4 border-t border-border pt-3">
+                <div className="flex items-center justify-between gap-3">
+                    <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                        Serverless mode
+                    </div>
+                    <button
+                        type="button"
+                        role="switch"
+                        aria-checked={serverless}
+                        onClick={() => setServerlessMode(!serverless)}
+                        className={`relative h-5 w-9 shrink-0 rounded-full transition-colors ${
+                            serverless ? 'bg-emerald-500' : 'bg-border'
+                        }`}
+                    >
+                        <span
+                            className="absolute top-0.5 h-4 w-4 rounded-full bg-white transition-transform"
+                            style={{ transform: serverless ? 'translateX(18px)' : 'translateX(2px)' }}
+                        />
+                    </button>
+                </div>
+                <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">
+                    Runs the app with no database and no data round-trips — chats, memory and
+                    projects are served from this page and kept in sessionStorage, so everything
+                    disappears when you close the tab. Model replies still call the inference
+                    backend; there is no local model to answer with.
+                </p>
+                {serverless && (
+                    <div className="mt-2 flex items-center justify-between gap-2">
+                        <span className="font-mono text-[11px] text-muted-foreground">
+                            {serverlessCounts.conversations} chats · {serverlessCounts.projects} projects ·{' '}
+                            {serverlessCounts.memories} memories
+                        </span>
+                        <button
+                            type="button"
+                            className={buttonClass}
+                            onClick={() => {
+                                clearServerlessData();
+                                setServerlessCounts(serverlessStats());
+                            }}
+                        >
+                            Wipe session
+                        </button>
+                    </div>
+                )}
+            </div>
 
             {/* Screenshots */}
             <div className="mt-4 border-t border-border pt-3">

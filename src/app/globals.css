@@ -98,6 +98,10 @@ html.motion-reduce *::after {
 
     /* Sonoma tokens mapped to active theme */
     --sonoma-bg: var(--background);
+    /* Chrome surfaces sit a hair off pure white so the page (white) reads as
+       the base layer: sidebar slightly warmer than the chat column. */
+    --sonoma-sidebar-bg: #fbfbf9;
+    --sonoma-chat-bg: #fcfcfb;
     --sonoma-bg-2: var(--muted);
     --sonoma-surface: var(--card);
     --sonoma-surface-2: var(--accent);
@@ -165,6 +169,14 @@ html.motion-reduce *::after {
     --chart-3: #666666;
     --chart-4: #ffd740;
     --chart-5: #d4d4d4;
+}
+
+/* The chrome tints above are the *default* look (no theme, or the default
+   "white" theme) — any other explicit theme falls back to its background. */
+.dark,
+[data-theme]:not([data-theme="white"]) {
+    --sonoma-sidebar-bg: var(--background);
+    --sonoma-chat-bg: var(--background);
 }
 
 /* ═══════════════════════════════════════════════════════
@@ -255,6 +267,11 @@ html.motion-reduce *::after {
 }
 [data-theme="white"] body {
     background: #ffffff;
+}
+
+[data-theme="white"] {
+    --sonoma-sidebar-bg: #fbfbf9;
+    --sonoma-chat-bg: #fcfcfb;
 }
 
 /* ── Theme: Light (explicit) ─────────────────────────── */

@@ -1,13 +1,13 @@
 'use client';
 
-import { useCallback, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, usePathname } from 'next/navigation';
 import { useChatActions, useChatConversations } from '@/context/ChatContext';
 import { type User, useAuth } from '@/context/AuthContext';
 import { cn } from '@/lib/utils';
 import { HugeiconsIcon } from '@hugeicons/react';
-import { AnvilIcon, Logout02Icon, PaintBoardIcon, Settings05Icon } from '@hugeicons/core-free-icons';
+import { AnvilIcon, Folder01Icon, Logout02Icon, PaintBoardIcon, Settings05Icon } from '@hugeicons/core-free-icons';
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -25,6 +25,19 @@ import {
 
 function BuildIcon({ size = 18 }: { size?: number }) {
     return <HugeiconsIcon icon={AnvilIcon} size={size} strokeWidth={1.8} />;
+}
+
+function ProjectsIcon({ size = 18 }: { size?: number }) {
+    return <HugeiconsIcon icon={Folder01Icon} size={size} strokeWidth={1.8} />;
+}
+
+const SIDEBAR_WIDTH_KEY = 'sonoma:sidebar-width';
+const SIDEBAR_DEFAULT_WIDTH = 244;
+const SIDEBAR_MIN_WIDTH = 200;
+const SIDEBAR_MAX_WIDTH = 420;
+
+function clampSidebarWidth(w: number) {
+    return Math.max(SIDEBAR_MIN_WIDTH, Math.min(SIDEBAR_MAX_WIDTH, Math.round(w)));
 }
 
 const PAGES = [
@@ -92,8 +105,8 @@ function NavItem({ active, onClick, href, icon: Icon, label, collapsed }: NavIte
     );
 
     const classes = cn(
-        'relative flex min-w-0 flex-1 items-center rounded-[10px] text-[14px] transition-colors',
-        collapsed ? 'justify-center py-2.5 px-0' : 'flex-col justify-center gap-1 py-2 px-2 text-[13px]',
+        'relative flex w-full min-w-0 items-center rounded-[10px] text-[14px] transition-colors',
+        collapsed ? 'justify-center py-2.5 px-0' : 'flex-row justify-start gap-[10px] px-3 py-2',
         active
             ? 'text-[var(--sonoma-ink)] font-medium'
             : 'text-[var(--sonoma-ink-2)] hover:text-[var(--sonoma-ink)] font-normal',
@@ -270,6 +283,60 @@ export default function SonomaSidebar({ collapsed, onCollapseToggle, mobile = fa
         return pathname === href || pathname?.startsWith(`${href}/`);
     };
 
+    // Drag-to-resize (desktop, expanded only). Width persists per browser.
+    const [width, setWidth] = useState(SIDEBAR_DEFAULT_WIDTH);
+    const [resizing, setResizing] = useState(false);
+    const widthRef = useRef(width);
+    widthRef.current = width;
+
+    useEffect(() => {
+        try {
+            const saved = Number(window.localStorage.getItem(SIDEBAR_WIDTH_KEY));
+            if (Number.isFinite(saved) && saved > 0) setWidth(clampSidebarWidth(saved));
+        } catch {
+            /* storage unavailable — keep the default */
+        }
+    }, []);
+
+    useEffect(() => {
+        if (!resizing) return;
+        const onMove = (e: MouseEvent) => setWidth(clampSidebarWidth(e.clientX));
+        const onUp = () => {
+            setResizing(false);
+            try {
+                window.localStorage.setItem(SIDEBAR_WIDTH_KEY, String(widthRef.current));
+            } catch {
+                /* ignore */
+            }
+        };
+        const prevCursor = document.body.style.cursor;
+        const prevSelect = document.body.style.userSelect;
+        document.body.style.cursor = 'col-resize';
+        document.body.style.userSelect = 'none';
+        window.addEventListener('mousemove', onMove);
+        window.addEventListener('mouseup', onUp);
+        return () => {
+            window.removeEventListener('mousemove', onMove);
+            window.removeEventListener('mouseup', onUp);
+            document.body.style.cursor = prevCursor;
+            document.body.style.userSelect = prevSelect;
+        };
+    }, [resizing]);
+
+    const nudgeWidth = useCallback((delta: number) => {
+        setWidth((w) => {
+            const next = clampSidebarWidth(w + delta);
+            try {
+                window.localStorage.setItem(SIDEBAR_WIDTH_KEY, String(next));
+            } catch {
+                /* ignore */
+            }
+            return next;
+        });
+    }, []);
+
+    const resizable = !mobile && !collapsed;
+
     const routerPush = useCallback((href: string) => {
         router.push(href);
         onNavigate?.();
@@ -279,15 +346,61 @@ export default function SonomaSidebar({ collapsed, onCollapseToggle, mobile = fa
         <aside
             className="relative flex h-full flex-shrink-0 flex-col overflow-hidden border-r"
             style={{
-                width: mobile ? 'min(84vw, 320px)' : collapsed ? 64 : 244,
-                background: 'var(--sonoma-bg)',
+                width: mobile ? 'min(84vw, 320px)' : collapsed ? 64 : width,
+                background: 'var(--sonoma-sidebar-bg)',
                 borderRightColor: 'var(--sonoma-border)',
-                transition: mobile ? undefined : 'width .28s cubic-bezier(.2,.7,.2,1)',
+                transition: mobile || resizing ? undefined : 'width .28s cubic-bezier(.2,.7,.2,1)',
                 // Keep the drawer header clear of the status bar / notch.
                 paddingTop: mobile ? 'env(safe-area-inset-top)' : undefined,
                 paddingBottom: mobile ? 'env(safe-area-inset-bottom)' : undefined,
             }}
         >
+            {/* Drag handle — desktop only, sits on the right edge. */}
+            {resizable && (
+                <div
+                    role="separator"
+                    aria-orientation="vertical"
+                    aria-label="Resize sidebar"
+                    aria-valuenow={width}
+                    aria-valuemin={SIDEBAR_MIN_WIDTH}
+                    aria-valuemax={SIDEBAR_MAX_WIDTH}
+                    tabIndex={0}
+                    onMouseDown={(e) => {
+                        e.preventDefault();
+                        setResizing(true);
+                    }}
+                    onDoubleClick={() => {
+                        setWidth(SIDEBAR_DEFAULT_WIDTH);
+                        try {
+                            window.localStorage.setItem(SIDEBAR_WIDTH_KEY, String(SIDEBAR_DEFAULT_WIDTH));
+                        } catch {
+                            /* ignore */
+                        }
+                    }}
+                    onKeyDown={(e) => {
+                        if (e.key === 'ArrowLeft') {
+                            e.preventDefault();
+                            nudgeWidth(-16);
+                        } else if (e.key === 'ArrowRight') {
+                            e.preventDefault();
+                            nudgeWidth(16);
+                        }
+                    }}
+                    className="absolute inset-y-0 right-0 z-20 w-[5px] cursor-col-resize outline-none"
+                    style={{
+                        background: resizing ? 'var(--sonoma-accent)' : 'transparent',
+                        opacity: resizing ? 0.55 : 1,
+                        transition: 'background .15s',
+                    }}
+                    onMouseEnter={(e) => {
+                        if (!resizing) e.currentTarget.style.background = 'var(--sonoma-border-2)';
+                    }}
+                    onMouseLeave={(e) => {
+                        if (!resizing) e.currentTarget.style.background = 'transparent';
+                    }}
+                />
+            )}
+
             {/* Header */}
             <div
                 className={cn(
@@ -320,7 +433,7 @@ export default function SonomaSidebar({ collapsed, onCollapseToggle, mobile = fa
             </div>
 
             {/* Pages */}
-            <nav className={cn('gap-0.5 py-1.5', collapsed ? 'flex flex-col px-1' : 'flex flex-row px-[10px]')}>
+            <nav className={cn('flex flex-col gap-0.5 py-1.5', collapsed ? 'px-1' : 'px-[10px]')}>
                 {PAGES.map((p) => (
                     <NavItem
                         key={p.id}
@@ -333,6 +446,18 @@ export default function SonomaSidebar({ collapsed, onCollapseToggle, mobile = fa
                     />
                 ))}
             </nav>
+
+            {/* Projects — its own section under the page buttons. */}
+            <div className={cn('py-1', collapsed ? 'px-1' : 'px-[10px]')}>
+                <NavItem
+                    href="/projects"
+                    icon={ProjectsIcon}
+                    label="Projects"
+                    active={isPageActive('/projects')}
+                    collapsed={collapsed}
+                    onClick={onNavigate}
+                />
+            </div>
 
             {/* New chat */}
             <div className="px-[10px] pb-2 pt-1">

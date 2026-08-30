@@ -239,3 +239,45 @@ create table if not exists computer_nonces (
 );
 
 create index if not exists computer_nonces_seen_idx on computer_nonces (seen_at);
+
+-- ── Projects ───────────────────────────────────────────────────────────────
+-- A project is a named workspace that owns its own chats and its own memory,
+-- separate from the account-wide UserMemory profile. Memory content is
+-- encrypted at rest with the same key as UserMemory / conversations.
+create table if not exists projects (
+    id text primary key default gen_random_uuid()::text,
+    -- Identity is whatever the signed JWT session reports; no FK to "User",
+    -- so projects work for any authenticated id (including dev/serverless).
+    user_id text not null,
+    name text not null,
+    description text not null default '',
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now()
+);
+
+create index if not exists projects_user_idx on projects (user_id, updated_at desc);
+
+-- Facts the assistant learned (or the user saved) while working in a project.
+create table if not exists project_memories (
+    id text primary key default gen_random_uuid()::text,
+    project_id text not null references projects(id) on delete cascade,
+    user_id text not null,
+    content text not null,                   -- AES-256-GCM ciphertext
+    source text not null default 'explicit' check (source in ('explicit', 'auto')),
+    created_at timestamptz not null default now()
+);
+
+create index if not exists project_memories_project_idx
+    on project_memories (project_id, created_at desc);
+
+-- Which conversations belong to a project. Kept as its own table so the
+-- Prisma-owned "Conversation" table needs no migration.
+create table if not exists project_conversations (
+    conversation_id text primary key,
+    project_id text not null references projects(id) on delete cascade,
+    user_id text not null,
+    created_at timestamptz not null default now()
+);
+
+create index if not exists project_conversations_project_idx
+    on project_conversations (project_id, created_at desc);
