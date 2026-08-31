@@ -2,15 +2,14 @@ import { NextRequest, NextResponse } from 'next/server'
 import { jwtVerify } from 'jose'
 import { isDevModeActive } from '@/lib/dev-mode'
 
-// Per-request nonce CSP. Next.js stamps its own inline scripts (streaming
-// data, bootstrap) with this nonce via the x-nonce request header, so
-// 'unsafe-inline' and 'unsafe-eval' are not needed. style-src keeps
-// 'unsafe-inline' for SSR'd inline styles / CSS-in-JS (style injection is not
-// a script-execution vector).
-function pageCsp(nonce: string): string {
+// Next.js emits inline bootstrap/flight scripts in the HTML response. These
+// pages can be statically cached by Vercel, so a per-request nonce cannot be
+// attached reliably to the cached markup. Keep the page policy explicit and
+// allow only the inline scripts Next requires; unsafe-eval remains disabled.
+function pageCsp(): string {
     return [
         "default-src 'self'",
-        `script-src 'self' 'nonce-${nonce}' https://*.groq.com https://*.spline.io https://*.e2b.dev https://www.clarity.ms https://*.clarity.ms https://va.vercel-scripts.com`,
+        "script-src 'self' 'unsafe-inline' https://*.groq.com https://*.spline.io https://*.e2b.dev https://www.clarity.ms https://*.clarity.ms https://va.vercel-scripts.com",
         "style-src 'self' 'unsafe-inline'",
         "img-src 'self' data: blob: https:",
         "font-src 'self' data:",
@@ -40,11 +39,6 @@ const API_CSP = [
     "base-uri 'self'",
     "form-action 'self'",
 ].join('; ')
-
-function nonce(): string {
-    // Web Crypto — available on both the Node and Edge middleware runtimes.
-    return crypto.randomUUID()
-}
 
 export async function middleware(request: NextRequest) {
     const { pathname } = request.nextUrl
@@ -133,18 +127,12 @@ export async function middleware(request: NextRequest) {
         return NextResponse.redirect(url)
     }
 
-    const requestNonce = nonce()
-    // Surface the nonce to the app so Next.js stamps its own inline scripts
-    // (streaming bootstrap data) with it — otherwise they'd be blocked by CSP.
-    const requestHeaders = new Headers(request.headers)
-    requestHeaders.set('x-nonce', requestNonce)
-
-    const response = NextResponse.next({ request: { headers: requestHeaders } })
+    const response = NextResponse.next()
     response.headers.set('X-Content-Type-Options', 'nosniff')
     response.headers.set('X-Frame-Options', 'DENY')
     response.headers.set('X-XSS-Protection', '0')
     response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin')
-    response.headers.set('Content-Security-Policy', pageCsp(requestNonce))
+    response.headers.set('Content-Security-Policy', pageCsp())
     response.headers.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains')
     return response
 }

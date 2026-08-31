@@ -11,7 +11,6 @@ import {
     type DeepCodeReasoningLevel,
 } from '@/lib/sonoma/reasoning-levels';
 import {
-    SonomaClip,
     SonomaSend,
     SonomaStop,
     SonomaChevron,
@@ -21,6 +20,24 @@ import {
     SonomaFile,
     SonomaX,
 } from './icons';
+import { HugeiconsIcon } from '@hugeicons/react';
+import {
+    ZapIcon,
+    SpaceshipIcon,
+    BulbIcon,
+    Rocket01Icon,
+    HammerIcon,
+    ArrowRight01Icon,
+    ArrowUp01Icon,
+} from '@hugeicons/core-free-icons';
+
+const MODEL_ICONS: Record<string, typeof ZapIcon> = {
+    'majuli4': ZapIcon,
+    'suzhou4': SpaceshipIcon,
+    'taipei4': BulbIcon,
+    'astro-5': Rocket01Icon,
+    'astro-5-code': HammerIcon,
+};
 
 interface UploadedFile {
     id: string;
@@ -59,6 +76,7 @@ interface SonomaComposerProps {
     // Show the Connectors (Composio apps) chip + menu. Opt-in so surfaces
     // like the /dev panel stay unchanged.
     connectors?: boolean;
+    buildWorkspace?: boolean;
 
     // Hide the attach button and ignore pasted/dropped files. For surfaces
     // where uploads can't go anywhere (e.g. the landing hero, which hands the
@@ -66,6 +84,9 @@ interface SonomaComposerProps {
     attachments?: boolean;
 
     placeholder?: string;
+
+    /** Slim single-row pill bar (used for the docked in-chat composer). */
+    slim?: boolean;
 
     // Paired OpenSonoma machines available to @mention.
     machines?: { deviceId: string; machineName: string }[];
@@ -135,27 +156,23 @@ function DeepCodeChip({
     level,
     onLevelChange,
     compact,
+    buildWorkspace,
 }: {
     active: boolean;
     onClick: () => void;
     level: DeepCodeReasoningLevel;
     onLevelChange: (level: DeepCodeReasoningLevel) => void;
     compact?: boolean;
+    buildWorkspace?: boolean;
 }) {
     const [open, setOpen] = useState(false);
     const wrapRef = useRef<HTMLDivElement>(null);
     const idx = Math.max(0, DEEP_CODE_REASONING_LEVELS.indexOf(level));
     const [sliderValue, setSliderValue] = useState(idx);
     const sliderMax = DEEP_CODE_REASONING_LEVELS.length - 1;
-    const agenticStart = DEEP_CODE_REASONING_LEVELS.indexOf('max');
     const sliderPercent = (sliderValue / sliderMax) * 100;
-    const rgbStrength = Math.min(1, Math.max(0, (sliderValue - agenticStart) / (sliderMax - agenticStart)));
-    const rgbStops = [
-        ['#ff0000', 0],
-        ['#00ff00', 33],
-        ['#0000ff', 66],
-        ['#ff0000', 100],
-    ].map(([color, stop]) => `color-mix(in srgb, ${color} ${rgbStrength * 100}%, #3b82f6) ${stop}%`).join(', ');
+    const visualLevel = DEEP_CODE_REASONING_LEVELS[Math.min(sliderMax, Math.max(0, Math.round(sliderValue)))];
+    const isUltra = visualLevel === 'supercode';
 
     useEffect(() => setSliderValue(idx), [idx]);
 
@@ -169,7 +186,7 @@ function DeepCodeChip({
 
     return (
         <div ref={wrapRef} className="relative inline-flex items-center gap-0.5">
-            <ToolChip active={active} onClick={onClick} icon={<SonomaCode size={16} />} label="DeepCode" compact={compact} />
+            <ToolChip active={active} onClick={onClick} icon={<SonomaCode size={16} />} label={buildWorkspace ? 'Agentic' : level === 'supercode' ? 'Agentic' : 'DeepCode'} compact={compact} />
             <button
                 type="button"
                 onClick={() => setOpen((o) => !o)}
@@ -203,7 +220,9 @@ function DeepCodeChip({
                             Reasoning level
                         </span>
                         <span className="text-[12.5px] font-semibold" style={{ color: 'var(--sonoma-accent-2)' }}>
-                            {DEEP_CODE_REASONING_LEVEL_LABELS[level]}
+                            <span key={visualLevel} className="deepcode-level-label">
+                                {buildWorkspace && visualLevel === 'supercode' ? 'Ultra' : DEEP_CODE_REASONING_LEVEL_LABELS[visualLevel]}
+                            </span>
                         </span>
                     </div>
                     <input
@@ -215,21 +234,13 @@ function DeepCodeChip({
                         onChange={(e) => setSliderValue(Number(e.target.value))}
                         onPointerUp={() => {
                             const target = Math.round(sliderValue);
-                            const start = sliderValue;
-                            const began = performance.now();
-                            const animate = (now: number) => {
-                                const progress = Math.min(1, (now - began) / 180);
-                                const eased = 1 - Math.pow(1 - progress, 3);
-                                setSliderValue(start + (target - start) * eased);
-                                if (progress < 1) requestAnimationFrame(animate);
-                                else onLevelChange(DEEP_CODE_REASONING_LEVELS[target]);
-                            };
-                            requestAnimationFrame(animate);
+                            setSliderValue(target);
+                            onLevelChange(DEEP_CODE_REASONING_LEVELS[target]);
                         }}
-                        className={`deepcode-range w-full ${rgbStrength > 0 ? 'deepcode-range-rgb' : ''}`}
+                        className={`deepcode-range w-full ${isUltra ? 'deepcode-range-rgb' : ''}`}
                         style={{
-                            background: rgbStrength > 0
-                                ? `linear-gradient(90deg, ${rgbStops})`
+                            background: isUltra
+                                ? '#ef4444'
                                 : `linear-gradient(to right, #3b82f6 ${sliderPercent}%, var(--sonoma-border) ${sliderPercent}%)`,
                         }}
                         aria-label="DeepCode reasoning level slider"
@@ -243,10 +254,59 @@ function DeepCodeChip({
                                     color: l === level ? 'var(--sonoma-ink)' : 'var(--sonoma-faint)',
                                 }}
                             >
-                                {DEEP_CODE_REASONING_LEVEL_LABELS[l][0]}
+                                {(buildWorkspace && l === 'supercode' ? 'Ultra' : DEEP_CODE_REASONING_LEVEL_LABELS[l])[0]}
                             </span>
                         ))}
                     </div>
+                </div>
+            )}
+        </div>
+    );
+}
+
+function BuildPlanChip() {
+    const [open, setOpen] = useState(false);
+    const [mode, setMode] = useState<'Build' | 'Plan'>('Build');
+    const wrapRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        const onDoc = (event: MouseEvent) => {
+            if (wrapRef.current && !wrapRef.current.contains(event.target as Node)) setOpen(false);
+        };
+        document.addEventListener('mousedown', onDoc);
+        return () => document.removeEventListener('mousedown', onDoc);
+    }, []);
+
+    return (
+        <div ref={wrapRef} className="relative inline-flex items-center">
+            <button
+                type="button"
+                onClick={() => setOpen((value) => !value)}
+                aria-label={`Build mode: ${mode}`}
+                aria-expanded={open}
+                className="inline-flex items-center gap-1.5 rounded-full text-[13.5px] font-medium transition-colors"
+                style={{ border: '1px solid var(--sonoma-border)', background: 'var(--sonoma-surface)', color: 'var(--sonoma-ink-2)', padding: '7px 10px 7px 12px' }}
+            >
+                <span>{mode}</span>
+                <SonomaChevron />
+            </button>
+            {open && (
+                <div className="absolute bottom-[calc(100%+8px)] left-0 z-30 min-w-[120px] rounded-[12px] border p-1 shadow-lg" style={{ background: 'var(--sonoma-surface)', borderColor: 'var(--sonoma-border)' }}>
+                    {(['Build', 'Plan'] as const).map((option) => (
+                        <button
+                            key={option}
+                            type="button"
+                            className="block w-full rounded-lg px-3 py-2 text-left text-[13px]"
+                            style={{ background: mode === option ? 'var(--sonoma-accent-soft)' : 'transparent', color: 'var(--sonoma-ink)' }}
+                            onClick={() => {
+                                setMode(option);
+                                setOpen(false);
+                                window.dispatchEvent(new CustomEvent('tripplet:build-mode', { detail: { mode: option } }));
+                            }}
+                        >
+                            {option}
+                        </button>
+                    ))}
                 </div>
             )}
         </div>
@@ -259,6 +319,7 @@ export function ModelMenu({
     models,
     placement = 'up',
     variant = 'inline',
+    white = false,
 }: {
     value: string;
     onChange: (id: string) => void;
@@ -267,6 +328,8 @@ export function ModelMenu({
     placement?: 'up' | 'down';
     /** `pill` gives the trigger a bordered surface (for the mobile top bar). */
     variant?: 'inline' | 'pill';
+    /** White trigger label, for use over a dark/!light footer. */
+    white?: boolean;
 }) {
     const [open, setOpen] = useState(false);
     const wrapRef = useRef<HTMLDivElement>(null);
@@ -292,8 +355,8 @@ export function ModelMenu({
               }
             : {
                   padding: '7px 8px 7px 12px',
-                  color: 'var(--sonoma-ink-2)',
-                  background: open ? 'var(--sonoma-surface)' : 'transparent',
+                  color: white ? '#ffffff' : 'var(--sonoma-ink)',
+                  background: 'transparent',
               };
 
     const menuStyle: React.CSSProperties = {
@@ -304,7 +367,7 @@ export function ModelMenu({
         width: 'min(268px, calc(100vw - 32px))',
         background: 'var(--sonoma-surface)',
         border: '1px solid var(--sonoma-border)',
-        borderRadius: 14,
+        borderRadius: 18,
         boxShadow: 'var(--sonoma-shadow-lg)',
     };
 
@@ -313,7 +376,7 @@ export function ModelMenu({
             <button
                 type="button"
                 onClick={() => setOpen((o) => !o)}
-                className="inline-flex items-center gap-1.5 rounded-full text-[13.5px] font-medium"
+                className="inline-flex items-center gap-1.5 rounded-full text-[13.5px] font-medium outline-none focus:outline-none focus-visible:outline-none focus:ring-0"
                 style={triggerStyle}
             >
                 <span>{current.name}</span>
@@ -323,6 +386,7 @@ export function ModelMenu({
                 <div role="menu" className="absolute z-30 p-1.5" style={menuStyle}>
                     {models.map((m) => {
                         const sel = m.id === value;
+                        const icon = MODEL_ICONS[m.id];
                         return (
                             <button
                                 key={m.id}
@@ -330,9 +394,18 @@ export function ModelMenu({
                                     onChange(m.id);
                                     setOpen(false);
                                 }}
-                                className="flex w-full items-start gap-2.5 rounded-[10px] px-2.5 py-2.5 text-left"
+                                className="flex w-full items-center gap-2 rounded-[14px] px-2 py-1.5 text-left"
                                 style={{ background: sel ? 'var(--sonoma-surface)' : 'transparent' }}
                             >
+                                {icon && (
+                                    <HugeiconsIcon
+                                        icon={icon}
+                                        size={15}
+                                        style={{
+                                            color: sel ? 'var(--sonoma-accent-2)' : 'var(--sonoma-ink-2)',
+                                        }}
+                                    />
+                                )}
                                 <div className="min-w-0 flex-1">
                                     <div
                                         className="text-[13.5px] font-medium"
@@ -342,7 +415,7 @@ export function ModelMenu({
                                     </div>
                                     {m.description && (
                                         <div
-                                            className="mt-0.5 text-[12px] leading-[1.4]"
+                                            className="mt-0 text-[12px] leading-[1.4]"
                                             style={{ color: 'var(--sonoma-muted)' }}
                                         >
                                             {m.description}
@@ -444,15 +517,15 @@ export default function SonomaComposer({
     onToggleBrowse,
     reason,
     onToggleReason,
-    code,
-    onToggleCode,
     deepCode,
     onToggleDeepCode,
     deepCodeLevel,
     onDeepCodeLevelChange,
     connectors,
+    buildWorkspace = false,
     attachments = true,
     placeholder,
+    slim = false,
     machines = [],
     mentionedMachine,
     onMentionMachine,
@@ -477,6 +550,9 @@ export default function SonomaComposer({
     const [mentionQuery, setMentionQuery] = useState<string | null>(null);
     const [mentionStart, setMentionStart] = useState(0);
     const [mentionIndex, setMentionIndex] = useState(0);
+    // Collapsed toolbar: all tool buttons tuck behind the arrow toggle and
+    // slide out beside it when open.
+    const [toolsOpen, setToolsOpen] = useState(false);
 
     const mentionMatches = useMemo(() => {
         if (mentionQuery === null) return [];
@@ -630,7 +706,232 @@ export default function SonomaComposer({
         }
     }, []);
 
+
     const canSend = (value.trim().length > 0 || files.length > 0) && !busy;
+
+    const fileInput = attachments ? (
+        <input ref={fileRef} type="file" multiple accept="image/*" className="hidden" onChange={onPick} />
+    ) : null;
+
+    // The text field (highlight overlay + textarea + @mention popover). Shared
+    // by the full and slim layouts.
+    const editor = (
+        <div className="relative">
+            {overlayNodes && (
+                <div
+                    ref={overlayRef}
+                    aria-hidden
+                    className="pointer-events-none absolute inset-0 w-full resize-none whitespace-pre-wrap break-words leading-[1.55]"
+                    style={{
+                        fontSize: 16,
+                        padding: slim ? '5px 6px' : '4px 6px 6px',
+                        minHeight: 28,
+                        maxHeight: 220,
+                        fontFamily: 'inherit',
+                        color: 'var(--sonoma-ink)',
+                        overflow: 'hidden',
+                    }}
+                >
+                    {overlayNodes}
+                </div>
+            )}
+            <textarea
+                ref={taRef}
+                rows={1}
+                value={value}
+                onChange={(e) => {
+                    onChange(e.target.value);
+                    detectMention(e.target.value, e.target.selectionStart);
+                }}
+                onKeyUp={(e) => {
+                    const ta = e.currentTarget;
+                    detectMention(ta.value, ta.selectionStart);
+                }}
+                onClick={(e) => {
+                    const ta = e.currentTarget;
+                    detectMention(ta.value, ta.selectionStart);
+                }}
+                onScroll={(e) => {
+                    if (overlayRef.current) overlayRef.current.scrollTop = e.currentTarget.scrollTop;
+                }}
+                onKeyDown={onKey}
+                onPaste={onPaste}
+                onDrop={onDrop}
+                onDragOver={onDragOver}
+                placeholder={placeholder || 'How may I help?'}
+                className="relative w-full resize-none border-0 bg-transparent leading-[1.55] outline-none"
+                style={{
+                    color: overlayNodes ? 'transparent' : 'var(--sonoma-ink)',
+                    caretColor: 'var(--sonoma-ink)',
+                    // 16px keeps iOS Safari from auto-zooming the field on focus.
+                    fontSize: 16,
+                    padding: slim ? '5px 6px' : '4px 6px 6px',
+                    minHeight: 28,
+                    maxHeight: 220,
+                    fontFamily: 'inherit',
+                }}
+            />
+            {mentionQuery !== null && mentionMatches.length > 0 && (
+                <div
+                    className="absolute left-0 bottom-full z-20 mb-1 min-w-[200px] overflow-hidden rounded-[12px]"
+                    style={{
+                        background: 'var(--sonoma-surface)',
+                        border: '1px solid var(--sonoma-border)',
+                        boxShadow: 'var(--sonoma-shadow-md)',
+                    }}
+                >
+                    {mentionMatches.map((m, i) => (
+                        <button
+                            key={m.deviceId}
+                            type="button"
+                            onMouseDown={(e) => {
+                                e.preventDefault();
+                                pickMention(m);
+                            }}
+                            className="flex w-full items-center gap-2 px-3 py-2 text-left text-[13px]"
+                            style={{
+                                background: i === mentionIndex ? 'var(--sonoma-accent-soft)' : 'transparent',
+                                color: i === mentionIndex ? 'var(--sonoma-accent-2)' : 'var(--sonoma-ink)',
+                            }}
+                        >
+                            @{m.machineName}
+                        </button>
+                    ))}
+                    <div
+                        className="px-3 py-1.5 text-[11px]"
+                        style={{ color: 'var(--sonoma-faint)', borderTop: '1px solid var(--sonoma-border)' }}
+                    >
+                        Tab to select
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+
+    const mentionNotice = mentionedMachine ? (
+        <div className="mt-1 flex items-center gap-1.5 px-1 text-[11.5px]" style={{ color: 'var(--sonoma-faint)' }}>
+            <span style={{ color: 'var(--sonoma-accent-2)' }}>@{mentionedMachine.machineName}</span>
+            attached — Sonoma may ask permission to run commands on it.
+            <button type="button" onClick={() => onMentionMachine?.(null)} className="ml-0.5 underline">
+                remove
+            </button>
+        </div>
+    ) : null;
+
+    const toolChips = (
+        <>
+            {onToggleBrowse && (
+                <ToolChip
+                    active={!!browse}
+                    onClick={onToggleBrowse}
+                    icon={<SonomaBrowse />}
+                    label="Browse"
+                    compact={isMobile || buildWorkspace}
+                />
+            )}
+            {onToggleReason && !buildWorkspace && (
+                <ToolChip
+                    active={!!reason}
+                    onClick={onToggleReason}
+                    icon={<SonomaReason />}
+                    label="Reason"
+                    compact={isMobile || buildWorkspace}
+                />
+            )}
+            {onToggleDeepCode && (
+                <DeepCodeChip
+                    active={!!deepCode}
+                    onClick={onToggleDeepCode}
+                    level={deepCodeLevel ?? 'high'}
+                    onLevelChange={onDeepCodeLevelChange ?? (() => {})}
+                    compact={isMobile || buildWorkspace}
+                />
+            )}
+            {buildWorkspace ? <BuildPlanChip /> : connectors && <ConnectorsMenu compact={isMobile} />}
+        </>
+    );
+
+    const sendButton = (
+        <button
+            type="button"
+            onClick={busy ? onStop : onSend}
+            disabled={!busy && !canSend}
+            aria-label={busy ? 'Stop' : 'Send'}
+            className="inline-flex h-8 w-8 max-md:h-9 max-md:w-9 items-center justify-center rounded-full transition-all"
+            style={{
+                background: busy
+                    ? 'var(--sonoma-ink)'
+                    : canSend
+                        ? 'var(--sonoma-accent)'
+                        : 'var(--sonoma-bg-2)',
+                color: busy ? '#fff' : canSend ? '#fff' : 'var(--sonoma-faint)',
+                cursor: busy || canSend ? 'pointer' : 'not-allowed',
+                boxShadow:
+                    canSend && !busy
+                        ? '0 4px 12px -4px color-mix(in oklch, var(--sonoma-accent) 50%, transparent)'
+                        : 'none',
+            }}
+        >
+            {busy ? <SonomaStop /> : <SonomaSend />}
+        </button>
+    );
+
+    // Slim pill: one row — plus on the left, field in the middle, send on the
+    // right. Tools live in a row that unfolds above the field.
+    if (slim) {
+        return (
+            <div
+                className={`w-full ${deepCode && deepCodeLevel === 'supercode' ? 'supercode-composer' : ''}`}
+                style={{
+                    background: 'var(--sonoma-surface)',
+                    border: '1px solid var(--sonoma-border)',
+                    borderRadius: 14,
+                    padding: '6px 8px 6px 8px',
+                    boxShadow: 'var(--sonoma-shadow-md)',
+                    transition: 'border-color .2s, box-shadow .2s',
+                }}
+            >
+                <Attachments files={files} onRemove={onRemoveFile} />
+                {toolsOpen && (
+                    <div className="flex flex-wrap items-center gap-2 px-1 pb-2 pt-1">{toolChips}</div>
+                )}
+                <div className="flex items-center gap-1.5">
+                    <button
+                        type="button"
+                        title={toolsOpen ? 'Hide tools' : 'Show tools'}
+                        onClick={() => setToolsOpen((o) => !o)}
+                        aria-expanded={toolsOpen}
+                        aria-label={toolsOpen ? 'Hide tools' : 'Show tools'}
+                        className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors max-md:h-9 max-md:w-9"
+                        style={{
+                            color: toolsOpen ? 'var(--sonoma-accent-2)' : 'var(--sonoma-ink-2)',
+                            background: 'transparent',
+                        }}
+                        onMouseEnter={(e) => {
+                            e.currentTarget.style.background = 'var(--sonoma-surface-2)';
+                        }}
+                        onMouseLeave={(e) => {
+                            e.currentTarget.style.background = 'transparent';
+                        }}
+                    >
+                        <span
+                            className="inline-flex"
+                            style={{
+                                transform: toolsOpen ? 'rotate(180deg)' : 'rotate(0deg)',
+                                transition: 'transform .25s ease-in-out',
+                            }}
+                        >
+                            <HugeiconsIcon icon={ArrowUp01Icon} size={19} strokeWidth={1.8} />
+                        </span>
+                    </button>
+                    {fileInput}
+                    <div className="min-w-0 flex-1">{editor}</div>
+                    {sendButton}
+                </div>
+                {mentionNotice}
+            </div>
+        );
+    }
 
     return (
         <div
@@ -645,214 +946,67 @@ export default function SonomaComposer({
             }}
         >
             <Attachments files={files} onRemove={onRemoveFile} />
-            <div className="relative">
-                {overlayNodes && (
-                    <div
-                        ref={overlayRef}
-                        aria-hidden
-                        className="pointer-events-none absolute inset-0 w-full resize-none whitespace-pre-wrap break-words leading-[1.55]"
-                        style={{
-                            fontSize: 16,
-                            padding: '4px 6px 6px',
-                            minHeight: 28,
-                            maxHeight: 220,
-                            fontFamily: 'inherit',
-                            color: 'var(--sonoma-ink)',
-                            overflow: 'hidden',
-                        }}
-                    >
-                        {overlayNodes}
-                    </div>
-                )}
-                <textarea
-                    ref={taRef}
-                    rows={1}
-                    value={value}
-                    onChange={(e) => {
-                        onChange(e.target.value);
-                        detectMention(e.target.value, e.target.selectionStart);
-                    }}
-                    onKeyUp={(e) => {
-                        const ta = e.currentTarget;
-                        detectMention(ta.value, ta.selectionStart);
-                    }}
-                    onClick={(e) => {
-                        const ta = e.currentTarget;
-                        detectMention(ta.value, ta.selectionStart);
-                    }}
-                    onScroll={(e) => {
-                        if (overlayRef.current) overlayRef.current.scrollTop = e.currentTarget.scrollTop;
-                    }}
-                    onKeyDown={onKey}
-                    onPaste={onPaste}
-                    onDrop={onDrop}
-                    onDragOver={onDragOver}
-                    placeholder={placeholder || 'How can Tripplet help?'}
-                    className="relative w-full resize-none border-0 bg-transparent leading-[1.55] outline-none"
-                    style={{
-                        color: overlayNodes ? 'transparent' : 'var(--sonoma-ink)',
-                        caretColor: 'var(--sonoma-ink)',
-                        // 16px keeps iOS Safari from auto-zooming the field on focus.
-                        fontSize: 16,
-                        padding: '4px 6px 6px',
-                        minHeight: 28,
-                        maxHeight: 220,
-                        fontFamily: 'inherit',
-                    }}
-                />
-                {mentionQuery !== null && mentionMatches.length > 0 && (
-                    <div
-                        className="absolute left-0 top-full z-20 mt-1 min-w-[200px] overflow-hidden rounded-[12px]"
-                        style={{
-                            background: 'var(--sonoma-surface)',
-                            border: '1px solid var(--sonoma-border)',
-                            boxShadow: 'var(--sonoma-shadow-md)',
-                        }}
-                    >
-                        {mentionMatches.map((m, i) => (
-                            <button
-                                key={m.deviceId}
-                                type="button"
-                                onMouseDown={(e) => {
-                                    e.preventDefault();
-                                    pickMention(m);
-                                }}
-                                className="flex w-full items-center gap-2 px-3 py-2 text-left text-[13px]"
-                                style={{
-                                    background: i === mentionIndex ? 'var(--sonoma-accent-soft)' : 'transparent',
-                                    color: i === mentionIndex ? 'var(--sonoma-accent-2)' : 'var(--sonoma-ink)',
-                                }}
-                            >
-                                @{m.machineName}
-                            </button>
-                        ))}
-                        <div
-                            className="px-3 py-1.5 text-[11px]"
-                            style={{ color: 'var(--sonoma-faint)', borderTop: '1px solid var(--sonoma-border)' }}
-                        >
-                            Tab to select
-                        </div>
-                    </div>
-                )}
-            </div>
-            {mentionedMachine && (
-                <div className="mt-1 flex items-center gap-1.5 px-1 text-[11.5px]" style={{ color: 'var(--sonoma-faint)' }}>
-                    <span style={{ color: 'var(--sonoma-accent-2)' }}>@{mentionedMachine.machineName}</span>
-                    attached — Sonoma may ask permission to run commands on it.
-                    <button
-                        type="button"
-                        onClick={() => onMentionMachine?.(null)}
-                        className="ml-0.5 underline"
-                    >
-                        remove
-                    </button>
-                </div>
-            )}
+            {editor}
+            {mentionNotice}
             <div className="mt-1.5 flex flex-wrap items-center gap-2">
-                {attachments && (
-                    <>
-                        <input
-                            ref={fileRef}
-                            type="file"
-                            multiple
-                            accept="image/*"
-                            className="hidden"
-                            onChange={onPick}
-                        />
-                        <button
-                            type="button"
-                            title="Attach files"
-                            onClick={() => fileRef.current?.click()}
-                            className={cn(
-                                'inline-flex h-8 w-8 max-md:h-9 max-md:w-9 items-center justify-center rounded-full transition-colors',
-                            )}
-                            style={{
-                                border: '1px solid var(--sonoma-border)',
-                                color: 'var(--sonoma-ink-2)',
-                                background: 'var(--sonoma-surface)',
-                                boxShadow: 'var(--sonoma-shadow-sm)',
-                            }}
-                            onMouseEnter={(e) => {
-                                e.currentTarget.style.background = 'var(--sonoma-surface-2)';
-                                e.currentTarget.style.borderColor = 'var(--sonoma-border-2)';
-                            }}
-                            onMouseLeave={(e) => {
-                                e.currentTarget.style.background = 'var(--sonoma-surface)';
-                                e.currentTarget.style.borderColor = 'var(--sonoma-border)';
-                            }}
-                        >
-                            <SonomaClip />
-                        </button>
-                    </>
-                )}
+                {/* Toolbar toggle — replaces the paperclip. Click to slide the
+                    tool buttons out beside it; the arrow flips to point left. */}
+                <button
+                    type="button"
+                    title={toolsOpen ? 'Hide tools' : 'Show tools'}
+                    onClick={() => setToolsOpen((o) => !o)}
+                    aria-expanded={toolsOpen}
+                    className={cn(
+                        'inline-flex h-8 w-8 max-md:h-9 max-md:w-9 items-center justify-center rounded-full transition-colors',
+                    )}
+                    style={{
+                        border: '1px solid var(--sonoma-border)',
+                        color: toolsOpen ? 'var(--sonoma-accent-2)' : 'var(--sonoma-ink-2)',
+                        background: 'var(--sonoma-surface)',
+                        boxShadow: 'var(--sonoma-shadow-sm)',
+                    }}
+                    onMouseEnter={(e) => {
+                        e.currentTarget.style.background = 'var(--sonoma-surface-2)';
+                        e.currentTarget.style.borderColor = 'var(--sonoma-border-2)';
+                    }}
+                    onMouseLeave={(e) => {
+                        e.currentTarget.style.background = 'var(--sonoma-surface)';
+                        e.currentTarget.style.borderColor = 'var(--sonoma-border)';
+                    }}
+                >
+                    <span
+                        className="inline-flex"
+                        style={{
+                            transform: toolsOpen ? 'rotate(180deg)' : 'rotate(0deg)',
+                            transition: 'transform 0.35s ease-in-out',
+                        }}
+                    >
+                        <HugeiconsIcon icon={ArrowRight01Icon} size={16} />
+                    </span>
+                </button>
 
-                {onToggleBrowse && (
-                    <ToolChip
-                        active={!!browse}
-                        onClick={onToggleBrowse}
-                        icon={<SonomaBrowse />}
-                        label="Browse"
-                        compact={isMobile}
-                    />
-                )}
-                {onToggleReason && (
-                    <ToolChip
-                        active={!!reason}
-                        onClick={onToggleReason}
-                        icon={<SonomaReason />}
-                        label="Reason"
-                        compact={isMobile}
-                    />
-                )}
-                {onToggleCode && (
-                    <ToolChip
-                        active={!!code}
-                        onClick={onToggleCode}
-                        icon={<SonomaCode size={16} />}
-                        label="Code"
-                        compact={isMobile}
-                    />
-                )}
-                {onToggleDeepCode && (
-                    <DeepCodeChip
-                        active={!!deepCode}
-                        onClick={onToggleDeepCode}
-                        level={deepCodeLevel ?? 'high'}
-                        onLevelChange={onDeepCodeLevelChange ?? (() => {})}
-                        compact={isMobile}
-                    />
-                )}
-                {connectors && <ConnectorsMenu compact={isMobile} />}
+                {fileInput}
+
+                {/* Tool buttons — slide out next to the arrow when open.
+                    overflow-visible once expanded so popovers (Apps, DeepCode) can
+                    open upward without being clipped. */}
+                <div
+                    className={cn(
+                        'flex min-w-0 items-center gap-2 transition-all duration-300 ease-in-out',
+                        toolsOpen
+                            ? 'max-w-full translate-x-0 opacity-100 overflow-visible'
+                            : 'max-w-0 -translate-x-3 opacity-0 overflow-hidden',
+                    )}
+                >
+                    {toolChips}
+                </div>
 
                 <div className="min-w-0 flex-1" />
 
-                {/* On mobile the model picker lives in the top bar (see ChatShell). */}
-                {!isMobile && (
-                    <ModelMenu value={model} onChange={onModelChange} models={modelList} />
-                )}
+                {/* Model picker — always visible (mobile keeps it in the top bar). */}
+                {!isMobile && <ModelMenu value={model} onChange={onModelChange} models={modelList} />}
 
-                <button
-                    type="button"
-                    onClick={busy ? onStop : onSend}
-                    disabled={!busy && !canSend}
-                    aria-label={busy ? 'Stop' : 'Send'}
-                    className="inline-flex h-8 w-8 max-md:h-9 max-md:w-9 items-center justify-center rounded-full transition-all"
-                    style={{
-                        background: busy
-                            ? 'var(--sonoma-ink)'
-                            : canSend
-                                ? 'var(--sonoma-accent)'
-                                : 'var(--sonoma-bg-2)',
-                        color: busy ? '#fff' : canSend ? '#fff' : 'var(--sonoma-faint)',
-                        cursor: busy || canSend ? 'pointer' : 'not-allowed',
-                        boxShadow:
-                            canSend && !busy
-                                ? '0 4px 12px -4px color-mix(in oklch, var(--sonoma-accent) 50%, transparent)'
-                                : 'none',
-                    }}
-                >
-                    {busy ? <SonomaStop /> : <SonomaSend />}
-                </button>
+                {sendButton}
             </div>
         </div>
     );

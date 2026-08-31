@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useMemo, useState } from 'react';
+import { memo, useCallback, useMemo, useState } from 'react';
 import ReactMarkdown, { Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
@@ -184,7 +184,7 @@ interface UserMessageProps {
     files?: UserFile[];
 }
 
-export function SonomaUserMessage({ content, files = [] }: UserMessageProps) {
+function SonomaUserMessageImpl({ content, files = [] }: UserMessageProps) {
     return (
         <div className="sm-fadeUp mt-6 mb-2 flex flex-col items-end gap-1.5">
             {files.length > 0 && (
@@ -648,7 +648,7 @@ interface AssistantMessageProps {
     onMachineDecision?: (activityId: string, decision: MachineDecision) => void;
 }
 
-export function SonomaAssistantMessage({
+function SonomaAssistantMessageImpl({
     modelId,
     content,
     thinking,
@@ -797,3 +797,14 @@ export function SonomaAssistantMessage({
         </div>
     );
 }
+
+// Every streamed token commits new state for the *active* message, which
+// re-renders the whole thread. Without memo that re-runs ReactMarkdown +
+// rehypeHighlight over every completed message on every frame. Props for
+// settled messages keep their identity across those commits, so a shallow
+// compare is enough to skip them entirely. Behaviour and markup are unchanged.
+export const SonomaUserMessage = memo(SonomaUserMessageImpl);
+SonomaUserMessage.displayName = 'SonomaUserMessage';
+
+export const SonomaAssistantMessage = memo(SonomaAssistantMessageImpl);
+SonomaAssistantMessage.displayName = 'SonomaAssistantMessage';

@@ -199,3 +199,85 @@ create table if not exists x402_api_keys (
     created_at timestamptz not null default now(),
     last_used_at timestamptz
 );
+
+-- ── Tripplet Computer installs ──────────────────────────────────────────────
+-- One row per desktop install. The app generates an Ed25519 keypair on first
+-- run, registers the public half here, and signs every subsequent request with
+-- the private half — so there is no user-supplied API key anywhere in the
+-- desktop flow.
+--
+-- This identifies an INSTALL, not a person, and it is abuse control rather
+-- than authentication: the bootstrap secret that authorises registration ships
+-- inside a binary users hold, so a determined attacker can forge a
+-- registration. What it does buy is per-install rate limiting, revocation, and
+-- attribution — none of which a shared static key can offer.
+create table if not exists computer_installs (
+    id text primary key,                     -- ci_<uuid>, chosen by the client
+    public_key text not null,                -- base64 raw Ed25519 public key
+    token_hash text not null unique,         -- sha256 of the issued bearer token
+    app_version text not null default '',
+    platform text not null default '',
+    is_revoked boolean not null default false,
+    revoked_reason text,
+    -- Connector accounts are scoped to this id, replacing the per-user
+    -- Composio id the app used to keep in its own config.
+    composio_user_id text not null,
+    created_at timestamptz not null default now(),
+    last_seen_at timestamptz not null default now(),
+    request_count bigint not null default 0
+);
+
+create index if not exists computer_installs_seen_idx
+    on computer_installs (last_seen_at desc);
+
+-- Signed-request nonces, for replay rejection. Rows older than the clock-skew
+-- window are dead weight and are swept opportunistically on insert.
+create table if not exists computer_nonces (
+    nonce text primary key,
+    install_id text not null,
+    seen_at timestamptz not null default now()
+);
+
+create index if not exists computer_nonces_seen_idx on computer_nonces (seen_at);
+
+-- ── Projects ───────────────────────────────────────────────────────────────
+-- A project is a named workspace that owns its own chats and its own memory,
+-- separate from the account-wide UserMemory profile. Memory content is
+-- encrypted at rest with the same key as UserMemory / conversations.
+create table if not exists projects (
+    id text primary key default gen_random_uuid()::text,
+    -- Identity is whatever the signed JWT session reports; no FK to "User",
+    -- so projects work for any authenticated id (including dev/serverless).
+    user_id text not null,
+    name text not null,
+    description text not null default '',
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now()
+);
+
+create index if not exists projects_user_idx on projects (user_id, updated_at desc);
+
+-- Facts the assistant learned (or the user saved) while working in a project.
+create table if not exists project_memories (
+    id text primary key default gen_random_uuid()::text,
+    project_id text not null references projects(id) on delete cascade,
+    user_id text not null,
+    content text not null,                   -- AES-256-GCM ciphertext
+    source text not null default 'explicit' check (source in ('explicit', 'auto')),
+    created_at timestamptz not null default now()
+);
+
+create index if not exists project_memories_project_idx
+    on project_memories (project_id, created_at desc);
+
+-- Which conversations belong to a project. Kept as its own table so the
+-- Prisma-owned "Conversation" table needs no migration.
+create table if not exists project_conversations (
+    conversation_id text primary key,
+    project_id text not null references projects(id) on delete cascade,
+    user_id text not null,
+    created_at timestamptz not null default now()
+);
+
+create index if not exists project_conversations_project_idx
+    on project_conversations (project_id, created_at desc);

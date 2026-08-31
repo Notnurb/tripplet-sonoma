@@ -3,7 +3,7 @@
 // string checks live in sonoma-modules.test.ts; this file covers the resolver
 // layer with a mocked node:dns/promises.
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const lookup = vi.hoisted(() => vi.fn());
 vi.mock('node:dns/promises', () => ({ lookup: (...a: unknown[]) => lookup(...a) }));

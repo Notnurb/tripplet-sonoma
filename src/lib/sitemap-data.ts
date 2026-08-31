@@ -51,6 +51,7 @@ export const SITEMAP_SECTIONS: SitemapSection[] = [
             { path: '/hivemind', changeFrequency: 'weekly', priority: 0.7 },
             { path: '/studio', changeFrequency: 'weekly', priority: 0.6 },
             { path: '/coder', changeFrequency: 'daily', priority: 0.7 },
+            { path: '/computer', changeFrequency: 'monthly', priority: 0.8 },
             { path: '/spark', changeFrequency: 'weekly', priority: 0.6 },
             { path: '/looptrain', changeFrequency: 'weekly', priority: 0.6 },
             { path: '/subscribe', changeFrequency: 'monthly', priority: 0.7 },

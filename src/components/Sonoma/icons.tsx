@@ -20,6 +20,7 @@ import {
     Refresh01Icon,
     Copy01Icon,
     File01Icon,
+    FileBracesIcon,
 } from '@hugeicons/core-free-icons';
 
 type IconProps = SVGProps<SVGSVGElement> & {
@@ -117,6 +118,10 @@ export function SonomaCopy({ size = 16, ...rest }: IconProps) {
 
 export function SonomaCheck({ size = 16, ...rest }: IconProps) {
     return <HI icon={Tick02Icon} size={size} strokeWidth={2} {...(rest as object)} />;
+}
+
+export function SonomaProjectFiles({ size = 18, ...rest }: IconProps) {
+    return <HI icon={FileBracesIcon} size={size} {...(rest as object)} />;
 }
 
 export function SonomaThumbUp({ size = 16, ...rest }: IconProps) {

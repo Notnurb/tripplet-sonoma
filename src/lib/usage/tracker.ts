@@ -41,7 +41,9 @@ export interface UsageSummary {
  * is on the free plan — this function is the single place to teach the
  * metering about real subscriptions when payments exist.
  */
-export async function getUserPlan(_userId: string): Promise<PlanId> {
+export async function getUserPlan(userId: string): Promise<PlanId> {
+    // No `plan` column exists on User yet; every account is free until billing lands.
+    void userId;
     return 'free';
 }
 

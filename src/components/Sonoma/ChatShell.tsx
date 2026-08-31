@@ -2,6 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
+import { HugeiconsIcon } from '@hugeicons/react';
+import { Folder01Icon } from '@hugeicons/core-free-icons';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import { modelsForPage, DEEP_CODE_PERSONA, type WorkspacePage } from '@/lib/ai/models';
 import {
@@ -13,6 +16,7 @@ import { useChatConversations, useChatActions } from '@/context/ChatContext';
 import { runBash, isVmDownloaded, bootVm } from '@/lib/sandbox/trippletLinux';
 import { readSonomaStream, mergeActivity, finishBashActivity, updateBashActivity } from '@/lib/sonoma/stream';
 import { takeChatHandoff } from '@/lib/sonoma/handoff';
+import { learnServerlessProjectMemory } from '@/lib/dev/serverless';
 import { OUTAGE_ACTIVE } from '@/lib/outage';
 import type { Message } from '@/types';
 import SonomaComposer, { ModelMenu } from './Composer';
@@ -97,7 +101,18 @@ interface SonomaChatShellProps {
     page?: WorkspacePage;
     modelIds?: string[];
     conversationId?: string;
+    /** Project workspace this chat belongs to (see /projects). */
+    projectId?: string;
+    projectName?: string;
     transparent?: boolean;
+    composerAtBottom?: boolean;
+    onMessageSent?: () => void;
+    onResponseSettled?: () => void;
+    promptEventName?: string;
+    greeting?: { title: string; sub: string; placeholder: string };
+    beforeComposer?: React.ReactNode;
+    buildWorkspace?: boolean;
+    onCanvasContentChange?: (content: string) => void;
     // /dev panel only: bypasses the OUTAGE_ACTIVE composer lock and routes the
     // selected persona through a user-supplied Groq key + model id instead of
     // the normal server-side backend. See src/app/dev/page.tsx.
@@ -106,7 +121,7 @@ interface SonomaChatShellProps {
 }
 
 const GREETINGS: Record<WorkspacePage, { title: () => string; sub: string; placeholder: string }> = {
-    chat: { title: timeGreeting, sub: 'What shall we work on?', placeholder: 'How can Tripplet help?' },
+    chat: { title: timeGreeting, sub: 'What shall we work on?', placeholder: 'How may I help?' },
     code: {
         title: () => "Let's build.",
         sub: 'Code, debug, refactor — together.',
@@ -149,7 +164,7 @@ function toUI(m: Message): UIMessage {
     };
 }
 
-export default function SonomaChatShell({ page = 'chat', modelIds, conversationId, transparent = false, forceEnabled = false, devOverride }: SonomaChatShellProps = {}) {
+export default function SonomaChatShell({ page = 'chat', modelIds, conversationId, projectId, projectName, transparent = false, composerAtBottom = false, onMessageSent, onResponseSettled, promptEventName, greeting: greetingOverride, beforeComposer, buildWorkspace = false, onCanvasContentChange, forceEnabled = false, devOverride }: SonomaChatShellProps = {}) {
     const router = useRouter();
     const isMobile = useIsMobile();
     const { conversations, historyLoaded } = useChatConversations();
@@ -210,6 +225,11 @@ export default function SonomaChatShell({ page = 'chat', modelIds, conversationI
     // Manage panel. Refetched whenever Manage closes (pair/unpair changes it).
     const [pairedMachines, setPairedMachines] = useState<{ deviceId: string; machineName: string }[]>([]);
     const [mentionedMachine, setMentionedMachine] = useState<{ deviceId: string; machineName: string } | null>(null);
+    const greeting = greetingOverride ?? {
+        title: GREETINGS[page].title(),
+        sub: GREETINGS[page].sub,
+        placeholder: GREETINGS[page].placeholder,
+    };
 
     const refreshMachines = useCallback(() => {
         fetch('/api/connect/machines')
@@ -254,6 +274,9 @@ export default function SonomaChatShell({ page = 'chat', modelIds, conversationI
     // The conversation this shell is bound to. Starts from the route param;
     // a fresh /chat with no id gets one assigned on first send.
     const convIdRef = useRef<string | null>(conversationId ?? null);
+    // Conversation already claimed by the active project, so the link POST
+    // fires once instead of on every settled turn.
+    const linkedConvRef = useRef<string | null>(null);
     // Tracks which conversation id we've already hydrated into local state so
     // we don't clobber an in-progress chat when the list updates.
     const hydratedRef = useRef<string | null>(null);
@@ -263,6 +286,64 @@ export default function SonomaChatShell({ page = 'chat', modelIds, conversationI
     // Signature of the last persisted message list, so merely viewing a chat
     // doesn't re-save and reshuffle the history order.
     const savedSigRef = useRef<string>('');
+
+    // --- Streaming delta coalescing -------------------------------------
+    // Content/thinking deltas arrive one token at a time. Committing each one
+    // straight to state re-renders the whole thread (and re-parses every
+    // message's markdown), so buffer them and flush at most once per animation
+    // frame. Purely a scheduling change — the same text lands in the same
+    // order, just in fewer commits.
+    const pendingRef = useRef<{ id: string; content: string; thinking: string } | null>(null);
+    const rafRef = useRef<number | null>(null);
+
+    const flushDeltas = useCallback(() => {
+        if (rafRef.current !== null) {
+            cancelAnimationFrame(rafRef.current);
+            rafRef.current = null;
+        }
+        const pending = pendingRef.current;
+        pendingRef.current = null;
+        if (!pending || (!pending.content && !pending.thinking)) return;
+        setMessages((prev) => {
+            const next = prev.map((m) =>
+                m.id === pending.id
+                    ? {
+                        ...m,
+                        content: pending.content ? m.content + pending.content : m.content,
+                        thinking: pending.thinking ? (m.thinking ?? '') + pending.thinking : m.thinking,
+                    }
+                    : m,
+            );
+            if (pending.content) {
+                const assistant = next.find((m) => m.id === pending.id);
+                if (assistant) onCanvasContentChange?.(assistant.content);
+            }
+            return next;
+        });
+    }, [onCanvasContentChange]);
+
+    const queueDelta = useCallback(
+        (id: string, field: 'content' | 'thinking', delta: string) => {
+            // A delta for a different message means the previous one is done —
+            // commit it before starting a new buffer so ordering is preserved.
+            if (pendingRef.current && pendingRef.current.id !== id) flushDeltas();
+            const pending = pendingRef.current ?? { id, content: '', thinking: '' };
+            pending[field] += delta;
+            pendingRef.current = pending;
+            if (rafRef.current === null) {
+                rafRef.current = requestAnimationFrame(() => {
+                    rafRef.current = null;
+                    flushDeltas();
+                });
+            }
+        },
+        [flushDeltas],
+    );
+
+    // Never leave buffered text stranded if the shell unmounts mid-stream.
+    useEffect(() => () => {
+        if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
+    }, []);
 
     useEffect(() => {
         convIdRef.current = conversationId ?? null;
@@ -303,15 +384,28 @@ export default function SonomaChatShell({ page = 'chat', modelIds, conversationI
         if (sig === savedSigRef.current) return;
         savedSigRef.current = sig;
         saveConversation(id, messages.map(toPersisted), model);
+        // Claim the conversation for the project it was started in. Runs after
+        // saveConversation so the row exists (the join table has an FK to it);
+        // once per conversation, and never allowed to surface an error.
+        if (projectId && linkedConvRef.current !== id) {
+            linkedConvRef.current = id;
+            void fetch(`/api/projects/${projectId}/conversations`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ conversationId: id }),
+            }).catch(() => {
+                linkedConvRef.current = null; // let a later turn retry
+            });
+        }
         // Reflect the new conversation in the URL once it's safely persisted.
         if (pendingNavRef.current === id) {
             pendingNavRef.current = null;
             router.replace(`/chat/${id}`);
         }
-    }, [busy, messages, model, saveConversation, router]);
+    }, [busy, messages, model, saveConversation, router, projectId]);
 
     const empty = messages.length === 0 && !busy;
-    const centered = empty;
+    const centered = empty && !composerAtBottom;
 
     // Auto-scroll as content streams in, but only when the user is already
     // pinned to the bottom — don't yank them back while they read history.
@@ -501,6 +595,25 @@ export default function SonomaChatShell({ page = 'chat', modelIds, conversationI
         [messages, runApprovedMachine],
     );
 
+    // `onMachineDecision(id)` mints a fresh closure on every render, which
+    // would defeat React.memo on every message in the thread. Hand out one
+    // stable function per message id and route it through a ref so it always
+    // sees the current handler.
+    const machineDecisionRef = useRef(onMachineDecision);
+    useEffect(() => {
+        machineDecisionRef.current = onMachineDecision;
+    }, [onMachineDecision]);
+    const machineDecisionCache = useRef(new Map<string, (activityId: string, decision: 'yes' | 'always' | 'no') => void>());
+    const machineDecisionFor = useCallback((assistantId: string) => {
+        const cache = machineDecisionCache.current;
+        let handler = cache.get(assistantId);
+        if (!handler) {
+            handler = (activityId, decision) => machineDecisionRef.current(assistantId)(activityId, decision);
+            cache.set(assistantId, handler);
+        }
+        return handler;
+    }, []);
+
     const runAgent = useCallback(
         async (history: UIMessage[], assistantId: string) => {
             const ctrl = new AbortController();
@@ -523,6 +636,7 @@ export default function SonomaChatShell({ page = 'chat', modelIds, conversationI
                 memory: memoryEnabled,
                 pastChats: pastChatsEnabled,
                 machine: mentionedMachine,
+                projectId,
                 // Override auth rides on the HttpOnly dev_unlock cookie.
                 ...(devOverride
                     ? { dev: { apiKey: devOverride.apiKey, modelId: devOverride.modelId } }
@@ -563,20 +677,8 @@ export default function SonomaChatShell({ page = 'chat', modelIds, conversationI
                 }
 
                 await readSonomaStream(res.body, {
-                    onThinking: (delta) =>
-                        setMessages((prev) =>
-                            prev.map((m) =>
-                                m.id === assistantId
-                                    ? { ...m, thinking: (m.thinking ?? '') + delta }
-                                    : m,
-                            ),
-                        ),
-                    onContent: (delta) =>
-                        setMessages((prev) =>
-                            prev.map((m) =>
-                                m.id === assistantId ? { ...m, content: m.content + delta } : m,
-                            ),
-                        ),
+                    onThinking: (delta) => queueDelta(assistantId, 'thinking', delta),
+                    onContent: (delta) => queueDelta(assistantId, 'content', delta),
                     onActivity: (ev) => {
                         if (ev.tool === 'run_on_machine') {
                             const deviceId = String(ev.args?.device_id ?? '');
@@ -608,16 +710,20 @@ export default function SonomaChatShell({ page = 'chat', modelIds, conversationI
                             execBash(assistantId, ev.id, String(ev.args?.command ?? ''));
                         }
                     },
-                    onError: (message) =>
+                    onError: (message) => {
+                        flushDeltas();
                         setMessages((prev) =>
                             prev.map((m) =>
                                 m.id === assistantId
                                     ? { ...m, content: m.content + `\n\n_Error: ${message}_` }
                                     : m,
                             ),
-                        ),
+                        );
+                    },
                 });
+                flushDeltas();
             } catch (e) {
+                flushDeltas();
                 if (ctrl.signal.aborted) {
                     setMessages((prev) =>
                         prev.map((m) =>
@@ -637,22 +743,41 @@ export default function SonomaChatShell({ page = 'chat', modelIds, conversationI
                     );
                 }
             } finally {
+                flushDeltas();
                 abortRef.current = null;
                 setBusy(false);
+                // Serverless mode has no database for the server-side project
+                // learner to write to, so collect the fact in-page instead.
+                // No-op unless serverless mode is on.
+                if (projectId) {
+                    const lastUser = [...history].reverse().find((m) => m.role === 'user');
+                    if (lastUser?.content) learnServerlessProjectMemory(projectId, lastUser.content);
+                }
+                onResponseSettled?.();
             }
         },
-        [browse, reason, codeMode, deepCode, deepCodeLevel, page, model, devOverride, sandboxEnabled, memoryEnabled, pastChatsEnabled, mentionedMachine, execBash, execMachine],
+        [browse, reason, codeMode, deepCode, deepCodeLevel, page, model, projectId, devOverride, sandboxEnabled, memoryEnabled, pastChatsEnabled, mentionedMachine, execBash, execMachine, onResponseSettled, queueDelta, flushDeltas],
     );
 
     useEffect(() => {
         runAgentRef.current = runAgent;
     }, [runAgent]);
 
+    useEffect(() => {
+        if (page !== 'code' || promptEventName !== 'tripplet:build-prompt' || busy) return;
+        const lastAssistant = [...messages].reverse().find((message) => message.role === 'assistant' && message.content.trim());
+        if (!lastAssistant || !/[?？]\s*$/.test(lastAssistant.content.trim())) return;
+        window.dispatchEvent(new CustomEvent('tripplet:build-question', {
+            detail: { question: lastAssistant.content.trim().split('\n').pop() },
+        }));
+    }, [busy, messages, page, promptEventName]);
+
     const handleSend = useCallback(async () => {
         if (OUTAGE_ACTIVE && !forceEnabled) return;
         if (busy) return;
         const text = draft.trim();
         if (!text && uploaded.length === 0) return;
+        onMessageSent?.();
 
         // Ensure this chat is backed by a conversation so it lands in history.
         // On the bare /chat route (no id), mint one now and reflect it in the URL.
@@ -662,7 +787,8 @@ export default function SonomaChatShell({ page = 'chat', modelIds, conversationI
                 convIdRef.current = newId;
                 hydratedRef.current = newId;
                 // Only the canonical /chat route should rewrite its URL.
-                if (page === 'chat' && !conversationId) pendingNavRef.current = newId;
+                // A project chat owns its own URL — don't bounce to /chat/<id>.
+                if (page === 'chat' && !conversationId && !projectId) pendingNavRef.current = newId;
             }
         }
 
@@ -695,7 +821,17 @@ export default function SonomaChatShell({ page = 'chat', modelIds, conversationI
         // instead of requiring a fresh @mention every message.
 
         await runAgent(next.slice(0, -1), assistantMessage.id);
-    }, [busy, draft, uploaded, messages, model, runAgent, createConversation, page, conversationId, forceEnabled]);
+    }, [busy, draft, uploaded, messages, model, runAgent, createConversation, page, conversationId, projectId, forceEnabled, onMessageSent]);
+
+    useEffect(() => {
+        if (!promptEventName) return;
+        const handlePrompt = (event: Event) => {
+            const prompt = (event as CustomEvent<{ prompt?: string }>).detail?.prompt;
+            if (prompt) setDraft(prompt);
+        };
+        window.addEventListener(promptEventName, handlePrompt);
+        return () => window.removeEventListener(promptEventName, handlePrompt);
+    }, [promptEventName]);
 
     // Landing-page handoff: a message typed into the composer on `/` arrives
     // via sessionStorage. Prefill the draft (and any options) on mount, then
@@ -743,9 +879,36 @@ export default function SonomaChatShell({ page = 'chat', modelIds, conversationI
     return (
         <div
             className="relative flex h-full w-full flex-1"
-            style={{ background: transparent ? 'transparent' : 'var(--sonoma-bg)' }}
+            style={{ background: transparent ? 'transparent' : 'var(--sonoma-chat-bg)' }}
         >
             <div className="relative h-full flex-1" style={{ minWidth: 0 }}>
+                {/* Project workspace: name of the project this chat lives in. */}
+                {projectName && (
+                    <div
+                        className="absolute left-0 right-0 top-0 z-20 flex"
+                        style={{
+                            padding: isMobile ? '8px 12px' : '12px 20px',
+                            justifyContent: isMobile ? 'center' : 'flex-start',
+                            pointerEvents: 'none',
+                        }}
+                    >
+                        <Link
+                            href={`/projects/${projectId}`}
+                            className="inline-flex max-w-full items-center gap-1.5 rounded-full text-[13px] font-medium"
+                            style={{
+                                pointerEvents: 'auto',
+                                padding: '6px 12px',
+                                background: 'var(--sonoma-surface)',
+                                border: '1px solid var(--sonoma-border)',
+                                color: 'var(--sonoma-ink)',
+                                boxShadow: 'var(--sonoma-shadow-sm)',
+                            }}
+                        >
+                            <HugeiconsIcon icon={Folder01Icon} size={15} strokeWidth={1.8} />
+                            <span className="truncate">{projectName}</span>
+                        </Link>
+                    </div>
+                )}
                 {/* Mobile: model picker centered at the top, under the "Tripplet" header. */}
                 {isMobile && (
                     <div
@@ -768,8 +931,8 @@ export default function SonomaChatShell({ page = 'chat', modelIds, conversationI
                     onScroll={onScroll}
                     className="sonoma-scroll absolute inset-0 overflow-y-auto"
                     style={{
-                        paddingTop: centered ? 0 : isMobile ? 56 : 24,
-                        paddingBottom: centered ? 0 : isMobile ? 188 : 220,
+                        paddingTop: empty ? 0 : isMobile ? 56 : projectName ? 60 : 24,
+                        paddingBottom: empty ? 0 : isMobile ? 188 : 220,
                         WebkitOverflowScrolling: 'touch',
                         overscrollBehaviorY: 'contain',
                     }}
@@ -779,15 +942,15 @@ export default function SonomaChatShell({ page = 'chat', modelIds, conversationI
                         style={{
                             maxWidth: 760,
                             padding: isMobile ? '0 14px' : '0 24px',
-                            minHeight: centered ? '100%' : 'auto',
-                            justifyContent: centered ? 'center' : 'flex-start',
+                            minHeight: empty ? '100%' : 'auto',
+                            justifyContent: empty ? 'center' : 'flex-start',
                         }}
                     >
                         {empty && (
                             <>
                                 <PageGreeting
-                                    title={GREETINGS[page].title()}
-                                    sub={GREETINGS[page].sub}
+                                    title={greeting.title}
+                                    sub={greeting.sub}
                                     white={transparent}
                                 />
                                 {centered && (
@@ -829,10 +992,12 @@ export default function SonomaChatShell({ page = 'chat', modelIds, conversationI
                                             deepCodeLevel={deepCodeLevel}
                                             onDeepCodeLevelChange={setDeepCodeLevel}
                                             connectors
-                                            placeholder={GREETINGS[page].placeholder}
+                                            buildWorkspace={buildWorkspace}
+                                            placeholder={greeting.placeholder}
                                             machines={pairedMachines}
                                             mentionedMachine={mentionedMachine}
                                             onMentionMachine={setMentionedMachine}
+
                                         />
                                         </div>
                                     </div>
@@ -887,7 +1052,7 @@ export default function SonomaChatShell({ page = 'chat', modelIds, conversationI
                                         isStreaming={isLast && busy}
                                         onRegenerate={isLast ? handleRegenerate : undefined}
                                         white={transparent}
-                                        onMachineDecision={onMachineDecision(m.id)}
+                                        onMachineDecision={machineDecisionFor(m.id)}
                                     />
                                 );
                             })}
@@ -902,7 +1067,7 @@ export default function SonomaChatShell({ page = 'chat', modelIds, conversationI
                             paddingBottom: 'env(safe-area-inset-bottom)',
                             background: transparent
                                 ? 'linear-gradient(to top, rgba(0,0,0,0.7) 55%, rgba(0,0,0,0.4) 80%, transparent)'
-                                : 'linear-gradient(to top, var(--sonoma-bg) 55%, color-mix(in oklch, var(--sonoma-bg) 85%, transparent) 80%, transparent)',
+                                : 'linear-gradient(to top, var(--sonoma-chat-bg) 55%, color-mix(in oklch, var(--sonoma-chat-bg) 85%, transparent) 80%, transparent)',
                         }}
                     >
                         <div style={{ maxWidth: 760, margin: '0 auto', position: 'relative' }}>
@@ -926,6 +1091,7 @@ export default function SonomaChatShell({ page = 'chat', modelIds, conversationI
                                 </button>
                             )}
                             {OUTAGE_ACTIVE && !forceEnabled && <OutageNotice />}
+                            {beforeComposer}
                             <div
                                 aria-disabled={OUTAGE_ACTIVE && !forceEnabled}
                                 style={
@@ -962,20 +1128,35 @@ export default function SonomaChatShell({ page = 'chat', modelIds, conversationI
                                 deepCodeLevel={deepCodeLevel}
                                 onDeepCodeLevelChange={setDeepCodeLevel}
                                 connectors
+                                buildWorkspace={buildWorkspace}
+                                placeholder={greeting.placeholder}
                                 machines={pairedMachines}
                                 mentionedMachine={mentionedMachine}
                                 onMentionMachine={setMentionedMachine}
+                                slim
+
                             />
                             </div>
                             <div
-                                className="py-2.5 text-center"
+                                className="flex items-center justify-between gap-3"
                                 style={{
-                                    color: 'var(--sonoma-faint)',
+                                    color: 'var(--sonoma-ink)',
                                     fontSize: 11.5,
-                                    padding: '10px 0 14px',
+                                    padding: '6px 6px 12px',
                                 }}
                             >
-                                Tripplet can make mistakes. Verify important details.
+                                <span className="min-w-0 truncate">
+                                    Tripplet can make mistakes. Verify important details.
+                                </span>
+                                {!isMobile && (
+                                    <div className="shrink-0" style={{ marginRight: -8 }}>
+                                        <ModelMenu
+                                            value={model}
+                                            onChange={setModel}
+                                            models={pageModels}
+                                        />
+                                    </div>
+                                )}
                             </div>
                         </div>
                     </div>

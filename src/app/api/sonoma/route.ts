@@ -27,6 +27,8 @@ import {
 } from '@/lib/sonoma/deepcode';
 import { listMemories } from '@/lib/db/user-memory';
 import { learnFromExchange } from '@/lib/memory/learner';
+import { learnProjectMemory } from '@/lib/memory/project-learner';
+import { getProject, listProjectMemories } from '@/lib/db/projects';
 import { sanitizeExternalContent } from '@/lib/security/sanitize';
 import { checkUsageAllowance, usageLimitResponse, recordUsage, finalizeUsage } from '@/lib/usage/tracker';
 
@@ -73,6 +75,9 @@ interface RouteBody {
     // exchange, big-pickle autonomously extracts new durable facts about the
     // user in the background (src/lib/memory/learner.ts).
     memory?: boolean;
+    // Project workspace this chat belongs to. Its own memory is injected into
+    // the system prompt, and new facts are learned back into it.
+    projectId?: string;
     // Past Chats skill (settings toggle, default on). When enabled for a
     // signed-in user, the `search_past_chats` tool lets the model search that
     // user's own earlier conversations (src/lib/db/conversation-search.ts).
@@ -118,7 +123,7 @@ export async function POST(req: NextRequest) {
     } catch {
         return new Response('Bad JSON', { status: 400 });
     }
-    const { messages, reason = false, browse = false, code = false, deepCode = false, sandbox = false, memory = true, pastChats = true, conversationId, page = 'chat', model, dev, machine = null } = body;
+    const { messages, reason = false, browse = false, code = false, deepCode = false, sandbox = false, memory = true, pastChats = true, conversationId, page = 'chat', model, dev, machine = null, projectId } = body;
     const deepCodeLevel = isReasoningLevel(body.deepCodeLevel)
         ? body.deepCodeLevel
         : DEEP_CODE_DEFAULT_REASONING_LEVEL;
@@ -229,6 +234,29 @@ export async function POST(req: NextRequest) {
     const memoryOn = memory && !!userId;
     const userMemories: string[] = await memoriesPromise;
 
+    // Project workspace: the project's own memory rides alongside the account
+    // profile, headed by the project name so the model knows what it's in.
+    // Ownership is re-checked here — a client-supplied id proves nothing.
+    let activeProjectId: string | null = null;
+    if (typeof projectId === 'string' && projectId && userId) {
+        try {
+            const project = await getProject(userId, projectId);
+            if (project) {
+                activeProjectId = project.id;
+                const rows = await listProjectMemories(project.id, 40);
+                userMemories.unshift(
+                    `Current project: ${sanitizeExternalContent(project.name)}` +
+                        (project.description
+                            ? ` — ${sanitizeExternalContent(project.description)}`
+                            : ''),
+                    ...rows.map((m) => `[project] ${sanitizeExternalContent(m.content)}`),
+                );
+            }
+        } catch {
+            // Projects tables missing or DB hiccup — chat continues unscoped.
+        }
+    }
+
     // Count the request against the budget now — before the model stream
     // starts, so concurrent requests can't slip under the allowance check
     // above, but after every pre-inference rejection path.
@@ -244,12 +272,24 @@ export async function POST(req: NextRequest) {
     // never awaited on the hot path, never allowed to throw.
     const lastUserMessage = [...messages].reverse().find((m) => m.role === 'user')?.content ?? '';
     const learnInBackground = (assistantText: string) => {
-        if (!memoryOn || !assistantText.trim()) return;
-        void learnFromExchange({
-            userId: userId!,
-            userMessage: lastUserMessage,
-            assistantMessage: assistantText,
-        });
+        if (!assistantText.trim()) return;
+        if (memoryOn) {
+            void learnFromExchange({
+                userId: userId!,
+                userMessage: lastUserMessage,
+                assistantMessage: assistantText,
+            });
+        }
+        // Project memory is the point of working inside a project, so it
+        // collects whether or not the account-wide Memory skill is on.
+        if (activeProjectId) {
+            void learnProjectMemory({
+                projectId: activeProjectId,
+                userId: userId!,
+                userMessage: lastUserMessage,
+                assistantMessage: assistantText,
+            });
+        }
     };
 
     const encoder = new TextEncoder();
