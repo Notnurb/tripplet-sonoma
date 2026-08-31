@@ -1,0 +1,37 @@
+{
+    "services": {
+        "frontend": {
+            "root": ".",
+            "framework": "nextjs"
+        },
+        "backend": {
+            "root": "services/backend"
+        },
+        "opensonoma-agent": {
+            "root": "services/opensonoma-agent"
+        }
+    },
+    "rewrites": [
+        {
+            "source": "/api/opensonoma-agent(/.*)?",
+            "destination": {
+                "type": "service",
+                "service": "opensonoma-agent"
+            }
+        },
+        {
+            "source": "/api/backend(/.*)?",
+            "destination": {
+                "type": "service",
+                "service": "backend"
+            }
+        },
+        {
+            "source": "/(.*)",
+            "destination": {
+                "type": "service",
+                "service": "frontend"
+            }
+        }
+    ]
+}
